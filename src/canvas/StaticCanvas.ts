@@ -93,6 +93,11 @@ export class StaticCanvas<
   declare width: number;
   declare height: number;
 
+  declare boards: {
+    start: number;
+    end: number;
+  }[];
+
   // background
   declare backgroundVpt: boolean;
   declare backgroundColor: TFiller | string;
@@ -594,8 +599,30 @@ export class StaticCanvas<
    */
   _renderObjects(ctx: CanvasRenderingContext2D, objects: FabricObject[]) {
     for (let i = 0, len = objects.length; i < len; ++i) {
+      const frameId = objects[i].frameId;
+      if (frameId) {
+        ctx.save();
+        const frameObject = objects.find((o) => o.id === frameId);
+        if (frameObject) {
+          this._frameClip(ctx, frameObject);
+        }
+      }
       objects[i] && objects[i].render(ctx);
+      if (frameId) {
+        ctx.restore();
+      }
     }
+  }
+
+  /**
+   * 根据画板进行裁剪
+   * @param ctx
+   * @param objects
+   */
+  _frameClip(ctx: CanvasRenderingContext2D, object: FabricObject) {
+    ctx.beginPath();
+    ctx.rect(object.left, object.top, object.width, object.height);
+    ctx.clip();
   }
 
   /**

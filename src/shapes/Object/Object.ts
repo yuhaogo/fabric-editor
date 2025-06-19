@@ -188,6 +188,21 @@ export class FabricObject<
 
   declare opacity: number;
 
+  /**
+   * 图层类型
+   */
+  declare layerType: string;
+
+  /**
+   * 对象 id
+   */
+  declare id: string;
+
+  /**
+   * 画板 id
+   */
+  declare frameId?: string;
+
   declare paintFirst: 'fill' | 'stroke';
   declare fill: string | TFiller | null;
   declare fillRule: CanvasFillRule;

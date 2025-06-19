@@ -1180,6 +1180,9 @@ export class Canvas extends SelectableCanvas implements CanvasOptions {
       this._fireOverOutEvents(e, target);
     } else {
       this._transformObject(e);
+      // 鼠标移入/移出画板
+      const frameTarget = this.findFrame(e);
+      this._fireOverOutFrameEvents(e, frameTarget);
     }
     this.textEditingManager.onMouseMove(e);
     this._handleEvent(e, 'move');
@@ -1197,6 +1200,9 @@ export class Canvas extends SelectableCanvas implements CanvasOptions {
       _hoveredTargets = this._hoveredTargets,
       targets = this.targets,
       length = Math.max(_hoveredTargets.length, targets.length);
+    if (_hoveredTarget?.layerType === 'frame') {
+      console.log(_hoveredTarget);
+    }
 
     this.fireSyntheticInOutEvents('mouse', {
       e,
@@ -1213,6 +1219,21 @@ export class Canvas extends SelectableCanvas implements CanvasOptions {
     }
     this._hoveredTarget = target;
     this._hoveredTargets = this.targets.concat();
+  }
+
+  /**
+   * 触发鼠标移入/移出画板事件
+   * @param e
+   * @param target
+   */
+  _fireOverOutFrameEvents(e: TPointerEvent, target?: FabricObject) {
+    const _hoveredFrameTarget = this._hoveredFrameTarget;
+    this.fireSyntheticInOutEvents('mouse', {
+      e,
+      target,
+      oldTarget: _hoveredFrameTarget,
+    });
+    this._hoveredFrameTarget = target;
   }
 
   /**

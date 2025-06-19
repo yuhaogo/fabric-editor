@@ -15,7 +15,7 @@ export default {
     });
 
     const textValue = 'fabric.js sandbox';
-    const text = new fabric.Textbox(textValue, {
+    const text = new fabric.FabricText(textValue, {
       originX: 'center',
       splitByGrapheme: true,
       width: 200,

@@ -215,6 +215,11 @@ export class SelectableCanvas<EventSpec extends CanvasEvents = CanvasEvents>
   declare _hoveredTarget?: FabricObject;
 
   /**
+   * 鼠标移入的画板
+   */
+  declare _hoveredFrameTarget?: FabricObject;
+
+  /**
    * hold the list of nested targets hovered
    * @type FabricObject[]
    * @private
@@ -714,6 +719,9 @@ export class SelectableCanvas<EventSpec extends CanvasEvents = CanvasEvents>
       return undefined;
     }
 
+    // 过滤 frame
+    const _objects = this._objects.filter((o) => o.layerType !== 'frame');
+
     const pointer = this.getViewportPoint(e),
       activeObject = this._activeObject,
       aObjects = this.getActiveObjects();
@@ -740,7 +748,7 @@ export class SelectableCanvas<EventSpec extends CanvasEvents = CanvasEvents>
         } else {
           const subTargets = this.targets;
           this.targets = [];
-          const target = this.searchPossibleTargets(this._objects, pointer);
+          const target = this.searchPossibleTargets(_objects, pointer);
           if (
             e[this.altSelectionKey as ModifierKey] &&
             target &&
@@ -756,7 +764,13 @@ export class SelectableCanvas<EventSpec extends CanvasEvents = CanvasEvents>
       }
     }
 
-    return this.searchPossibleTargets(this._objects, pointer);
+    return this.searchPossibleTargets(_objects, pointer);
+  }
+
+  findFrame(e: TPointerEvent): FabricObject | undefined {
+    const pointer = this.getViewportPoint(e);
+    const _objects = this._objects.filter((o) => o.layerType === 'frame');
+    return this._searchPossibleFrame(_objects, pointer);
   }
 
   /**
@@ -830,6 +844,36 @@ export class SelectableCanvas<EventSpec extends CanvasEvents = CanvasEvents>
       }
     }
     return false;
+  }
+
+  /**
+   * 搜索可能画板
+   * @param {Array} [objects] objects array to look into
+   * @param {Object} [pointer] x,y object of point coordinates we want to check.
+   * @return {FabricObject} **top most object from given `objects`** that contains pointer
+   * @private
+   */
+  _searchPossibleFrame(
+    objects: FabricObject[],
+    pointer: Point,
+  ): FabricObject | undefined {
+    // Cache all targets where their bounding box contains point.
+    let i = objects.length;
+    // Do not check for currently grouped objects, since we check the parent group itself.
+    // until we call this function specifically to search inside the activeGroup
+    while (i--) {
+      const target = objects[i];
+      if (this._checkTarget(target, pointer)) {
+        if (isCollection(target) && target.subTargetCheck) {
+          const subTarget = this._searchPossibleTargets(
+            target._objects,
+            pointer,
+          );
+          subTarget && this.targets.push(subTarget);
+        }
+        return target;
+      }
+    }
   }
 
   /**
