@@ -90,6 +90,7 @@ export type GraphemeBBox = {
   renderLeft?: number;
   renderTop?: number;
   angle?: number;
+  ascent?: number;
 };
 
 // @TODO this is not complete
@@ -425,6 +426,7 @@ export class FabricText<
   declare cursorWidth: number;
   declare __lineHeights: number[];
   declare __lineWidths: number[];
+  declare __lineAscents: number[];
   declare initialized?: true;
 
   static cacheProperties = [...cacheProperties, ...additionalProps];
@@ -823,6 +825,7 @@ export class FabricText<
     const fontCache = cache.getFontCache(charStyle),
       fontDeclaration = this._getFontDeclaration(charStyle),
       couple = previousChar + _char,
+      ascentKey = _char + 'ascent',
       stylesAreEqual =
         previousChar &&
         fontDeclaration === this._getFontDeclaration(prevCharStyle),
@@ -830,13 +833,18 @@ export class FabricText<
     let width: number | undefined,
       coupleWidth: number | undefined,
       previousWidth: number | undefined,
-      kernedWidth: number | undefined;
+      kernedWidth: number | undefined,
+      ascent;
 
     if (previousChar && fontCache[previousChar] !== undefined) {
       previousWidth = fontCache[previousChar];
     }
     if (fontCache[_char] !== undefined) {
       kernedWidth = width = fontCache[_char];
+    }
+
+    if (fontCache[ascentKey] !== undefined) {
+      ascent = fontCache[ascentKey];
     }
     if (stylesAreEqual && fontCache[couple] !== undefined) {
       coupleWidth = fontCache[couple];
@@ -851,8 +859,12 @@ export class FabricText<
       // send a TRUE to specify measuring font size CACHE_FONT_SIZE
       this._setTextStyles(ctx, charStyle, true);
       if (width === undefined) {
-        kernedWidth = width = ctx.measureText(_char).width;
+        const { actualBoundingBoxAscent, width: measureWidth } =
+          ctx.measureText(_char);
+        kernedWidth = width = measureWidth;
+        ascent = actualBoundingBoxAscent;
         fontCache[_char] = width;
+        fontCache[ascentKey] = ascent;
       }
       if (previousWidth === undefined && stylesAreEqual && previousChar) {
         previousWidth = ctx.measureText(previousChar).width;
@@ -869,6 +881,7 @@ export class FabricText<
     return {
       width: width * fontMultiplier,
       kernedWidth: kernedWidth! * fontMultiplier,
+      ascent: ascent! * fontMultiplier,
     };
   }
 
@@ -1023,6 +1036,7 @@ export class FabricText<
       height: style.fontSize,
       kernedWidth,
       deltaY: style.deltaY,
+      ascent: info.ascent,
     };
     if (charIndex > 0 && !skipLeft) {
       const previousBox = this.__charBounds[lineIndex][charIndex - 1];
@@ -1061,7 +1075,7 @@ export class FabricText<
       height = 0;
     for (let i = 0, len = this._textLines.length; i < len; i++) {
       lineHeight = this.getHeightOfLine(i);
-      height += i === len - 1 ? lineHeight / this.lineHeight : lineHeight;
+      height += lineHeight;
     }
     return height;
   }
@@ -1104,7 +1118,7 @@ export class FabricText<
         ctx,
         this._textLines[i],
         left + leftOffset,
-        top + lineHeights + maxHeight,
+        top + lineHeights + heightOfLine,
         i,
       );
       lineHeights += heightOfLine;
@@ -1190,7 +1204,7 @@ export class FabricText<
       ctx.direction = isLtr ? 'ltr' : 'rtl';
       ctx.textAlign = isLtr ? LEFT : RIGHT;
     }
-    top -= (lineHeight * this._fontSizeFraction) / this.lineHeight;
+    top -= (lineHeight - this.__lineAscents[lineIndex]) / 2;
     if (shortCut) {
       // render all the line in one pass without checking
       // drawingLeft = isLtr ? left : left - this.getLineWidth(lineIndex);

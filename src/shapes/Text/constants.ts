@@ -102,13 +102,13 @@ export const textDefaultValues: Partial<TClassProperties<FabricText>> = {
     size: 0.6, // fontSize factor
     baseline: 0.11, // baseline-shift factor (downwards)
   },
-  _fontSizeFraction: 0.222,
+  _fontSizeFraction: 1,
   offsets: {
     underline: 0.1,
     linethrough: -0.28167, // added 1/30 to original number
     overline: -0.81333, // added 1/15 to original number
   },
-  _fontSizeMult: 1.13,
+  _fontSizeMult: 1,
   [TEXT_DECORATION_THICKNESS]: 66.667, // before implementation was 1/15
 };
 

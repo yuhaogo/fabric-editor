@@ -202,6 +202,19 @@ export class InteractiveFabricObject<
       : undefined;
   }
 
+  resetControlStatus() {
+    const controls = this.controls;
+    if (controls) {
+      for (const key in controls) {
+        if (Object.prototype.hasOwnProperty.call(controls, key)) {
+          const control = controls[key];
+
+          control.setHover(false);
+        }
+      }
+    }
+  }
+
   /**
    * Determines which corner is under the mouse cursor, represented by `pointer`.
    * This function is return a corner only if the object is the active one.
@@ -343,6 +356,7 @@ export class InteractiveFabricObject<
   setCoords(): void {
     super.setCoords();
     this.canvas && (this.oCoords = this.calcOCoords());
+    console.log('oCoords', this.oCoords);
   }
 
   /**
@@ -397,7 +411,18 @@ export class InteractiveFabricObject<
    * @param {Point} size the control box size used
    */
   strokeBorders(ctx: CanvasRenderingContext2D, size: Point): void {
-    ctx.strokeRect(-size.x / 2, -size.y / 2, size.x, size.y);
+    const x = Math.round(-size.x / 2) - 1;
+    const y = Math.round(-size.y / 2) - 1;
+    const width = Math.round(size.x);
+    const height = Math.round(size.y);
+
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + width, y);
+    ctx.lineTo(x + width, y + height);
+    ctx.lineTo(x, y + height);
+    ctx.closePath();
+    ctx.stroke();
   }
 
   /**
@@ -468,18 +493,39 @@ export class InteractiveFabricObject<
   }
 
   /**
-   * Draws borders of an object's bounding box.
-   * Requires public properties: width, height
-   * Requires public options: padding, borderColor
-   * @param {CanvasRenderingContext2D} ctx Context to draw on
-   * @param {object} options object representing current object parameters
-   * @param {TStyleOverride} [styleOverride] object to override the object style
+   * 渲染边框
+   * @param ctx
+   * @param styleOverride
    */
-  drawBorders(
+  _renderBorder(
     ctx: CanvasRenderingContext2D,
-    options: TQrDecomposeOut,
-    styleOverride: TStyleOverride,
-  ): void {
+    styleOverride: TStyleOverride = {},
+  ) {
+    if (this.selectable) {
+      const vpt = this.getViewportTransform();
+      const matrix = multiplyTransformMatrices(vpt, this.calcTransformMatrix());
+      const options = qrDecompose(matrix);
+      ctx.save();
+      ctx.translate(options.translateX, options.translateY);
+      ctx.lineWidth = this.borderScaleFactor; // 1 * this.borderScaleFactor;
+      // since interactive groups have been introduced, an object could be inside a group and needing controls
+      // the following equality check `this.group === this.parent` covers:
+      // object without a group ( undefined === undefined )
+      // object inside a group
+      // excludes object inside a group but multi selected since group and parent will differ in value
+      if (this.group === this.parent) {
+        ctx.globalAlpha = this.isMoving ? this.borderOpacityWhenMoving : 1;
+      }
+      if (this.flipX) {
+        options.angle -= 180;
+      }
+      ctx.rotate(degreesToRadians(this.group ? options.angle : this.angle));
+      this.drawBaseBorders(ctx, options, styleOverride);
+      ctx.restore();
+    }
+  }
+
+  _getBorderSize(options: TQrDecomposeOut, styleOverride: TStyleOverride) {
     let size;
     if ((styleOverride && styleOverride.forActiveSelection) || this.group) {
       const bbox = sizeAfterTransform(
@@ -500,11 +546,47 @@ export class InteractiveFabricObject<
         .scalarAdd(this.borderScaleFactor)
         .scalarAdd(this.padding * 2);
     } else {
-      size = this._calculateCurrentDimensions().scalarAdd(
-        this.borderScaleFactor,
-      );
+      size = this._calculateCurrentDimensions();
     }
+    return size;
+  }
+
+  /**
+   * Draws borders of an object's bounding box.
+   * Requires public properties: width, height
+   * Requires public options: padding, borderColor
+   * @param {CanvasRenderingContext2D} ctx Context to draw on
+   * @param {object} options object representing current object parameters
+   * @param {TStyleOverride} [styleOverride] object to override the object style
+   */
+  drawBorders(
+    ctx: CanvasRenderingContext2D,
+    options: TQrDecomposeOut,
+    styleOverride: TStyleOverride,
+  ): void {
+    const size = this._getBorderSize(options, styleOverride);
     this._drawBorders(ctx, size, styleOverride);
+  }
+
+  /**
+   * Draws borders of an object's bounding box.
+   * Requires public properties: width, height
+   * Requires public options: padding, borderColor
+   * @param {CanvasRenderingContext2D} ctx Context to draw on
+   * @param {object} options object representing current object parameters
+   * @param {TStyleOverride} [styleOverride] object to override the object style
+   */
+  drawBaseBorders(
+    ctx: CanvasRenderingContext2D,
+    options: TQrDecomposeOut,
+    styleOverride: TStyleOverride,
+  ): void {
+    const size = this._getBorderSize(options, styleOverride);
+    ctx.save();
+    ctx.strokeStyle = this.borderColor;
+    this._setLineDash(ctx, this.borderDashArray);
+    this.strokeBorders(ctx, size);
+    ctx.restore();
   }
 
   /**

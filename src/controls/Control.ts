@@ -15,8 +15,11 @@ import {
   createTranslateMatrix,
   multiplyTransformMatrixArray,
 } from '../util/misc/matrix';
-import type { ControlRenderingStyleOverride } from './controlRendering';
-import { renderCircleControl, renderSquareControl } from './controlRendering';
+import type {
+  ControlRenderingStyleOverride,
+  ControlType,
+} from './controlRendering';
+import { renderCircleControl, renderSquare2Control } from './controlRendering';
 
 export class Control {
   /**
@@ -139,6 +142,16 @@ export class Control {
    */
   withConnection = false;
 
+  /**
+   * 控制器类型
+   */
+  controlType: ControlType;
+
+  /**
+   * 控制器是否被hover
+   */
+  hover = false;
+
   constructor(options?: Partial<Control>) {
     Object.assign(this, options);
   }
@@ -248,6 +261,13 @@ export class Control {
     fabricObject: InteractiveFabricObject,
   ) {
     return control.cursorStyle;
+  }
+
+  /**
+   * Set hover status for control
+   */
+  setHover(hover: boolean) {
+    this.hover = hover;
   }
 
   /**
@@ -365,14 +385,7 @@ export class Control {
         );
         break;
       default:
-        renderSquareControl.call(
-          this,
-          ctx,
-          left,
-          top,
-          styleOverride,
-          fabricObject,
-        );
+        renderSquare2Control.call(this, ctx, left, top, fabricObject);
     }
   }
 }

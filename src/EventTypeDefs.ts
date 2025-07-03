@@ -36,6 +36,8 @@ export type TransformAction<T extends Transform = Transform, R = void> = (
   transform: T,
   x: number,
   y: number,
+  moveX?: number,
+  moveY?: number,
 ) => R;
 
 /**
@@ -107,6 +109,11 @@ export interface BasicTransformEvent<E extends Event = TPointerEvent>
    * where it becomes a point relative to the group center
    */
   pointer: Point;
+
+  movement?: {
+    x?: number;
+    y?: number;
+  };
 }
 
 export type TModificationEvents =
@@ -281,6 +288,11 @@ export type TPointerEventNames =
 
 export type ObjectPointerEvents = TPointerEvents<'mouse'>;
 export type CanvasPointerEvents = TPointerEvents<'mouse:'>;
+export type CanvasTransPointerEvents = TPointerEvents<'trans:'>;
+export type ObjectTransPointerEvents = {
+  transover: TPointerEventInfo;
+  transout: TPointerEventInfo;
+};
 
 export interface MiscEvents {
   'contextmenu:before': SimpleEventHandler<Event>;
@@ -289,6 +301,7 @@ export interface MiscEvents {
 
 export interface ObjectEvents
   extends ObjectPointerEvents,
+    ObjectTransPointerEvents,
     DnDEvents,
     MiscEvents,
     ObjectModificationEvents {
@@ -323,6 +336,7 @@ export interface CanvasEvents
   extends StaticCanvasEvents,
     CanvasPointerEvents,
     CanvasDnDEvents,
+    CanvasTransPointerEvents,
     MiscEvents,
     CanvasModificationEvents,
     CanvasSelectionEvents {

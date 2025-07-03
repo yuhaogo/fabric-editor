@@ -767,6 +767,12 @@ export class SelectableCanvas<EventSpec extends CanvasEvents = CanvasEvents>
     return this.searchPossibleTargets(_objects, pointer);
   }
 
+  findFrameControl(e: TPointerEvent): FabricObject | undefined {
+    const pointer = this.getViewportPoint(e);
+    const _objects = this._objects.filter((o) => o.layerType === 'frame');
+    return this._searchPossibleFrameControl(_objects, pointer);
+  }
+
   findFrame(e: TPointerEvent): FabricObject | undefined {
     const pointer = this.getViewportPoint(e);
     const _objects = this._objects.filter((o) => o.layerType === 'frame');
@@ -847,6 +853,45 @@ export class SelectableCanvas<EventSpec extends CanvasEvents = CanvasEvents>
   }
 
   /**
+   * Checks point is inside the object selection condition. Either area with padding
+   * or over pixels if perPixelTargetFind is enabled
+   * @param {FabricObject} obj Object to test against
+   * @param {Object} [pointer] point from viewport.
+   * @return {Boolean} true if point is contained within an area of given object
+   * @private
+   */
+  _checkFrame(obj: FabricObject, pointer: Point): boolean {
+    if (obj && obj.visible && obj.evented) {
+      const coords = obj.getControlCoords();
+      return Intersection.isPointInPolygon(pointer, coords);
+    }
+    return false;
+  }
+
+  /**
+   * 搜索可能画板控制器区域
+   * @param {Array} [objects] objects array to look into
+   * @param {Object} [pointer] x,y object of point coordinates we want to check.
+   * @return {FabricObject} **top most object from given `objects`** that contains pointer
+   * @private
+   */
+  _searchPossibleFrameControl(
+    objects: FabricObject[],
+    pointer: Point,
+  ): FabricObject | undefined {
+    // Cache all targets where their bounding box contains point.
+    let i = objects.length;
+    // Do not check for currently grouped objects, since we check the parent group itself.
+    // until we call this function specifically to search inside the activeGroup
+    while (i--) {
+      const target = objects[i];
+      if (this._checkFrame(target, pointer)) {
+        return target;
+      }
+    }
+  }
+
+  /**
    * 搜索可能画板
    * @param {Array} [objects] objects array to look into
    * @param {Object} [pointer] x,y object of point coordinates we want to check.
@@ -864,13 +909,6 @@ export class SelectableCanvas<EventSpec extends CanvasEvents = CanvasEvents>
     while (i--) {
       const target = objects[i];
       if (this._checkTarget(target, pointer)) {
-        if (isCollection(target) && target.subTargetCheck) {
-          const subTarget = this._searchPossibleTargets(
-            target._objects,
-            pointer,
-          );
-          subTarget && this.targets.push(subTarget);
-        }
         return target;
       }
     }
@@ -1362,6 +1400,12 @@ export class SelectableCanvas<EventSpec extends CanvasEvents = CanvasEvents>
 
     if (activeObject) {
       activeObject._renderControls(ctx);
+    }
+  }
+
+  drawBorder(ctx: CanvasRenderingContext2D) {
+    if (this._hoveredTarget) {
+      this._hoveredTarget._renderBorder(ctx);
     }
   }
 

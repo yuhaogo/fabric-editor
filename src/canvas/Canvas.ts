@@ -62,11 +62,20 @@ const syntheticEventConfig = {
     canvasIn: 'drag:enter',
     canvasOut: 'drag:leave',
   },
+  trans: {
+    in: 'over',
+    out: 'out',
+    targetIn: 'transover',
+    targetOut: 'transout',
+    canvasIn: 'trans:over',
+    canvasOut: 'trans:out',
+  },
 } as const;
 
 type TSyntheticEventContext = {
   mouse: { e: TPointerEvent };
   drag: DragEventData;
+  trans: { e: TPointerEvent };
 };
 
 export class Canvas extends SelectableCanvas implements CanvasOptions {
@@ -1136,9 +1145,13 @@ export class Canvas extends SelectableCanvas implements CanvasOptions {
       undefined,
       this.viewportTransform,
     );
-    this._target = this._currentTransform
+    let _target = this._currentTransform
       ? this._currentTransform.target
       : this.findTarget(e);
+    if (!_target) {
+      _target = this.findFrameControl(e);
+    }
+    this._target = _target;
   }
 
   /**
@@ -1175,15 +1188,19 @@ export class Canvas extends SelectableCanvas implements CanvasOptions {
 
       this.renderTop();
     } else if (!this._currentTransform) {
-      const target = this.findTarget(e);
+      let target = this.findTarget(e);
+      if (!target) {
+        target = this.findFrameControl(e);
+      }
       this._setCursorFromEvent(e, target);
       this._fireOverOutEvents(e, target);
     } else {
       this._transformObject(e);
-      // 鼠标移入/移出画板
+      // 鼠标拖拽图层移入/移出
       const frameTarget = this.findFrame(e);
       this._fireOverOutFrameEvents(e, frameTarget);
     }
+
     this.textEditingManager.onMouseMove(e);
     this._handleEvent(e, 'move');
     this._resetTransformEventData();
@@ -1200,9 +1217,6 @@ export class Canvas extends SelectableCanvas implements CanvasOptions {
       _hoveredTargets = this._hoveredTargets,
       targets = this.targets,
       length = Math.max(_hoveredTargets.length, targets.length);
-    if (_hoveredTarget?.layerType === 'frame') {
-      console.log(_hoveredTarget);
-    }
 
     this.fireSyntheticInOutEvents('mouse', {
       e,
@@ -1228,7 +1242,7 @@ export class Canvas extends SelectableCanvas implements CanvasOptions {
    */
   _fireOverOutFrameEvents(e: TPointerEvent, target?: FabricObject) {
     const _hoveredFrameTarget = this._hoveredFrameTarget;
-    this.fireSyntheticInOutEvents('mouse', {
+    this.fireSyntheticInOutEvents('trans', {
       e,
       target,
       oldTarget: _hoveredFrameTarget,
@@ -1304,6 +1318,7 @@ export class Canvas extends SelectableCanvas implements CanvasOptions {
       };
       fireCanvas && this.fire(canvasOut, outOpt);
       oldTarget.fire(targetOut, outOpt);
+      this.requestRenderAll();
     }
     if (target && targetChanged) {
       const inOpt: CanvasEvents[typeof canvasIn] = {
@@ -1315,6 +1330,7 @@ export class Canvas extends SelectableCanvas implements CanvasOptions {
       };
       fireCanvas && this.fire(canvasIn, inOpt);
       target.fire(targetIn, inOpt);
+      this.requestRenderAll();
     }
   }
 
@@ -1383,6 +1399,10 @@ export class Canvas extends SelectableCanvas implements CanvasOptions {
   _setCursorFromEvent(e: TPointerEvent, target?: FabricObject) {
     if (!target) {
       this.setCursor(this.defaultCursor);
+      const activeObject = this._activeObject;
+      if (activeObject) {
+        activeObject.resetControlStatus();
+      }
       return;
     }
     let hoverCursor = target.hoverCursor || this.hoverCursor;

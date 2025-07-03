@@ -334,6 +334,10 @@ export function createCollectionMixin<TBase extends Constructor>(Base: TBase) {
       // we iterate reverse order to collect top first in case of click.
       for (let i = this._objects.length - 1; i >= 0; i--) {
         const object = this._objects[i] as unknown as InteractiveFabricObject;
+        // 框选时过滤 frame
+        if (object.layerType === 'frame') {
+          continue;
+        }
         if (
           object.selectable &&
           object.visible &&

@@ -68,11 +68,15 @@ export const isLocked = (
 export const commonEventInfo: TransformAction<
   Transform,
   BasicTransformEvent
-> = (eventData, transform, x, y) => {
+> = (eventData, transform, x, y, moveX, moveY) => {
   return {
     e: eventData,
     transform,
     pointer: new Point(x, y),
+    movement: {
+      x: moveX,
+      y: moveY,
+    },
   };
 };
 

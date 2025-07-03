@@ -23,9 +23,13 @@ export const textboxDefaultValues: Partial<TClassProperties<Textbox>> = {
 
 export type GraphemeData = {
   wordsData: {
-    word: string[];
-    width: number;
-  }[][];
+    words: {
+      word: string[];
+      width: number;
+      ascent: number;
+    }[];
+    wordsGroup?: number[][];
+  }[];
   largestWordWidth: number;
 };
 
@@ -43,7 +47,9 @@ export interface SerializedTextboxProps
   extends SerializedITextProps,
     Pick<UniqueTextboxProps, 'minWidth' | 'splitByGrapheme'> {}
 
-export interface TextboxProps extends ITextProps, UniqueTextboxProps {}
+export interface TextboxProps extends ITextProps, UniqueTextboxProps {
+  wordBreak: 'break-word' | 'break-all';
+}
 
 /**
  * Textbox class, based on IText, allows the user to resize the text rectangle
@@ -89,6 +95,8 @@ export class Textbox<
 
   declare isWrapping: boolean;
 
+  declare wordBreak: 'break-word' | 'break-all';
+
   static type = 'Textbox';
 
   static textLayoutProperties = [...IText.textLayoutProperties, 'width'];
@@ -117,7 +125,10 @@ export class Textbox<
    * make this function return an empty object and add controls to the ownDefaults object
    */
   static createControls(): { controls: Record<string, Control> } {
-    return { controls: createTextboxDefaultControls() };
+    const controls = createTextboxDefaultControls();
+    controls.mb.visible = false;
+    controls.mt.visible = false;
+    return { controls: controls };
   }
 
   /**
@@ -320,16 +331,29 @@ export class Textbox<
    * @param {Number} desiredWidth width you want to wrap to
    * @returns {Array} Array of lines
    */
-  _wrapText(lines: string[], desiredWidth: number): string[][] {
+  _wrapText(
+    lines: string[],
+    desiredWidth: number,
+  ): {
+    graphemeLines: string[][];
+    graphemeAescents: number[];
+  } {
     this.isWrapping = true;
     // extract all thewords and the widths to optimally wrap lines.
     const data = this.getGraphemeDataForRender(lines);
     const wrapped: string[][] = [];
+    const ascents: number[] = [];
     for (let i = 0; i < data.wordsData.length; i++) {
-      wrapped.push(...this._wrapLine(i, desiredWidth, data));
+      const { graphemeLines, graphemeAescents } = this._wrapLine(
+        i,
+        desiredWidth,
+        data,
+      );
+      wrapped.push(...graphemeLines);
+      ascents.push(...graphemeAescents);
     }
     this.isWrapping = false;
-    return wrapped;
+    return { graphemeLines: wrapped, graphemeAescents: ascents };
   }
 
   /**
@@ -352,25 +376,61 @@ export class Textbox<
         : this.wordSplit(line);
 
       if (wordsOrGraphemes.length === 0) {
-        return [{ word: [], width: 0 }];
+        return { words: [{ word: [], width: 0, ascent: 0 }] };
       }
+      const wordGroup = this.wordGroupSplit(line);
 
-      return wordsOrGraphemes.map((word: string) => {
-        // if using splitByGrapheme words are already in graphemes.
-        const graphemeArray = splitByGrapheme
-          ? [word]
-          : this.graphemeSplit(word);
-        const width = this._measureWord(graphemeArray, lineIndex, offset);
-        largestWordWidth = Math.max(width, largestWordWidth);
-        offset += graphemeArray.length + infix.length;
-        return { word: graphemeArray, width };
-      });
+      return {
+        words: wordsOrGraphemes.map((word: string, index) => {
+          // if using splitByGrapheme words are already in graphemes.
+          const graphemeArray = splitByGrapheme
+            ? [word]
+            : this.graphemeSplit(word);
+          const { width, ascent } = this._measureWord(
+            graphemeArray,
+            lineIndex,
+            offset,
+          );
+          largestWordWidth = Math.max(width, largestWordWidth);
+          offset += graphemeArray.length + infix.length;
+          return { word: graphemeArray, width, ascent };
+        }),
+        wordsGroup: wordGroup,
+      };
     });
 
     return {
       wordsData: data,
       largestWordWidth,
     };
+  }
+
+  _getGroupWord(i: number, group: number[][]): number {
+    for (let i = 0; i < group.length; i++) {
+      const [start, end] = group[i];
+      if (start >= i && end <= i) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  wordGroupSplit(line: string) {
+    // 使用正则表达式匹配空格、连字符和CJK字符边界进行分割
+    const groupWord = line
+      .split(/(\s+|[-]|[\u4e00-\u9fa5]|[\u3040-\u309F]|[\u30A0-\u30FF])/)
+      .filter((word) => {
+        // 过滤空字符串和纯空格
+        return word;
+      });
+
+    let start = 0;
+    return groupWord.map((word) => {
+      const end = start + word.length;
+      const wordIndex = [start, end - 1];
+      start = end;
+      return wordIndex;
+    });
   }
 
   /**
@@ -385,8 +445,16 @@ export class Textbox<
    * @param {number} charOffset
    * @returns {number}
    */
-  _measureWord(word: string[], lineIndex: number, charOffset = 0): number {
+  _measureWord(
+    word: string[],
+    lineIndex: number,
+    charOffset = 0,
+  ): {
+    width: number;
+    ascent: number;
+  } {
     let width = 0,
+      ascent = 0,
       prevGrapheme;
     const skipLeft = true;
     for (let i = 0, len = word.length; i < len; i++) {
@@ -399,8 +467,11 @@ export class Textbox<
       );
       width += box.kernedWidth;
       prevGrapheme = word[i];
+      if (box.ascent && box.ascent > ascent) {
+        ascent = box.ascent;
+      }
     }
-    return width;
+    return { width, ascent: ascent };
   }
 
   /**
@@ -429,10 +500,14 @@ export class Textbox<
     desiredWidth: number,
     { largestWordWidth, wordsData }: GraphemeData,
     reservedSpace = 0,
-  ): string[][] {
+  ): {
+    graphemeLines: string[][];
+    graphemeAescents: number[];
+  } {
     const additionalSpace = this._getWidthOfCharSpacing(),
       splitByGrapheme = this.splitByGrapheme,
       graphemeLines = [],
+      graphemeAescents = [],
       infix = splitByGrapheme ? '' : ' ';
 
     let lineWidth = 0,
@@ -451,35 +526,101 @@ export class Textbox<
     );
     // layout words
     const data = wordsData[lineIndex];
+    const wordsGroup = data.wordsGroup || [];
     offset = 0;
     let i;
-    for (i = 0; i < data.length; i++) {
-      const { word, width: wordWidth } = data[i];
-      offset += word.length;
+    let maxAscent = 0;
 
-      lineWidth += infixWidth + wordWidth - additionalSpace;
-      if (lineWidth > maxWidth && !lineJustStarted) {
-        graphemeLines.push(line);
-        line = [];
-        lineWidth = wordWidth;
-        lineJustStarted = true;
-      } else {
-        lineWidth += additionalSpace;
+    if (this.wordBreak === 'break-all') {
+      for (i = 0; i < data.words.length; i++) {
+        const { word, width: wordWidth } = data.words[i];
+        offset += word.length;
+        lineWidth += infixWidth + wordWidth - additionalSpace;
+        if (lineWidth > maxWidth && !lineJustStarted) {
+          graphemeLines.push(line);
+          line = [];
+          lineWidth = wordWidth;
+          lineJustStarted = true;
+        } else {
+          lineWidth += additionalSpace;
+        }
+        if (!lineJustStarted && !splitByGrapheme) {
+          line.push(infix);
+        }
+        line = line.concat(word);
+        const { width } = splitByGrapheme
+          ? { width: 0 }
+          : this._measureWord([infix], lineIndex, offset);
+        infixWidth = width;
+        offset++;
+        lineJustStarted = false;
       }
+    } else {
+      let restSpaceStr = false;
+      for (let i = 0; i < wordsGroup.length; i++) {
+        const [start, end] = wordsGroup[i];
+        let groupWord: string[] = [],
+          groupWidth = 0;
+        let groupJustStarted = line.length === 0;
 
-      if (!lineJustStarted && !splitByGrapheme) {
-        line.push(infix);
+        // 如何是行开头，并且上一行还剩下空格，那么这一行也需要添加宽度为 0 的空格
+        if (groupJustStarted && restSpaceStr) {
+          groupWord = groupWord.concat(['']);
+          restSpaceStr = false;
+        }
+        for (let j = start; j <= end; j++) {
+          const { word, width: wordWidth, ascent } = data.words[j];
+          offset += word.length;
+
+          if (ascent > maxAscent) {
+            maxAscent = ascent;
+          }
+
+          const _lineWidth =
+            lineWidth + groupWidth + wordWidth - additionalSpace;
+
+          if (_lineWidth > maxWidth) {
+            if (!groupJustStarted) {
+              graphemeLines.push(line);
+              graphemeAescents.push(maxAscent);
+              maxAscent = 0;
+              line = [];
+              lineWidth = 0;
+              lineJustStarted = true;
+              groupJustStarted = true;
+              if (/\s/.test(word[0])) {
+                restSpaceStr = true;
+              }
+            } else {
+              graphemeLines.push([...line, ...groupWord]);
+              graphemeAescents.push(maxAscent);
+              maxAscent = 0;
+              line = [];
+              lineWidth = 0;
+              groupWord = [];
+              groupWidth = 0;
+              lineJustStarted = true;
+            }
+          } else {
+            groupWidth += additionalSpace;
+          }
+
+          if (!restSpaceStr) {
+            groupWord = groupWord.concat(word);
+            groupWidth += infixWidth + wordWidth - additionalSpace;
+          }
+          offset++;
+          lineJustStarted = false;
+        }
+        lineWidth += groupWidth;
+        line.push(...groupWord);
       }
-      line = line.concat(word);
-
-      infixWidth = splitByGrapheme
-        ? 0
-        : this._measureWord([infix], lineIndex, offset);
-      offset++;
-      lineJustStarted = false;
     }
 
-    i && graphemeLines.push(line);
+    if (line.length) {
+      graphemeLines.push(line);
+      graphemeAescents.push(maxAscent);
+    }
 
     // TODO: this code is probably not necessary anymore.
     // it can be moved out of this function since largestWordWidth is now
@@ -487,7 +628,7 @@ export class Textbox<
     if (largestWordWidth + reservedSpace > this.dynamicMinWidth) {
       this.dynamicMinWidth = largestWordWidth - additionalSpace + reservedSpace;
     }
-    return graphemeLines;
+    return { graphemeLines, graphemeAescents };
   }
 
   /**
@@ -531,13 +672,17 @@ export class Textbox<
    */
   _splitTextIntoLines(text: string) {
     const newText = super._splitTextIntoLines(text),
-      graphemeLines = this._wrapText(newText.lines, this.width),
+      { graphemeLines, graphemeAescents } = this._wrapText(
+        newText.lines,
+        this.width,
+      ),
       lines = new Array(graphemeLines.length);
     for (let i = 0; i < graphemeLines.length; i++) {
       lines[i] = graphemeLines[i].join('');
     }
     newText.lines = lines;
     newText.graphemeLines = graphemeLines;
+    this.__lineAscents = graphemeAescents;
     return newText;
   }
 

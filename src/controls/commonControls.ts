@@ -1,6 +1,7 @@
-import { RESIZING, ROTATE } from '../constants';
+import { MOVING, RESIZING, ROTATE } from '../constants';
 import { changeWidth } from './changeWidth';
 import { Control } from './Control';
+import { dragHandler } from './drag';
 import { rotationStyleHandler, rotationWithSnapping } from './rotate';
 import { scaleCursorStyleHandler, scalingEqually } from './scale';
 import {
@@ -15,6 +16,9 @@ export const createObjectDefaultControls = () => ({
   ml: new Control({
     x: -0.5,
     y: 0,
+    sizeX: 6,
+    sizeY: 18,
+    controlType: 'diamond',
     cursorStyleHandler: scaleSkewCursorStyleHandler,
     actionHandler: scalingXOrSkewingY,
     getActionName: scaleOrSkewActionName,
@@ -23,6 +27,9 @@ export const createObjectDefaultControls = () => ({
   mr: new Control({
     x: 0.5,
     y: 0,
+    sizeX: 6,
+    sizeY: 18,
+    controlType: 'diamond',
     cursorStyleHandler: scaleSkewCursorStyleHandler,
     actionHandler: scalingXOrSkewingY,
     getActionName: scaleOrSkewActionName,
@@ -31,6 +38,9 @@ export const createObjectDefaultControls = () => ({
   mb: new Control({
     x: 0,
     y: 0.5,
+    sizeX: 18,
+    sizeY: 6,
+    controlType: 'diamond',
     cursorStyleHandler: scaleSkewCursorStyleHandler,
     actionHandler: scalingYOrSkewingX,
     getActionName: scaleOrSkewActionName,
@@ -39,6 +49,9 @@ export const createObjectDefaultControls = () => ({
   mt: new Control({
     x: 0,
     y: -0.5,
+    sizeX: 18,
+    sizeY: 6,
+    controlType: 'diamond',
     cursorStyleHandler: scaleSkewCursorStyleHandler,
     actionHandler: scalingYOrSkewingX,
     getActionName: scaleOrSkewActionName,
@@ -47,6 +60,9 @@ export const createObjectDefaultControls = () => ({
   tl: new Control({
     x: -0.5,
     y: -0.5,
+    sizeX: 8,
+    sizeY: 8,
+    controlType: 'square',
     cursorStyleHandler: scaleCursorStyleHandler,
     actionHandler: scalingEqually,
   }),
@@ -54,6 +70,9 @@ export const createObjectDefaultControls = () => ({
   tr: new Control({
     x: 0.5,
     y: -0.5,
+    sizeX: 8,
+    sizeY: 8,
+    controlType: 'square',
     cursorStyleHandler: scaleCursorStyleHandler,
     actionHandler: scalingEqually,
   }),
@@ -61,6 +80,9 @@ export const createObjectDefaultControls = () => ({
   bl: new Control({
     x: -0.5,
     y: 0.5,
+    sizeX: 8,
+    sizeY: 8,
+    controlType: 'square',
     cursorStyleHandler: scaleCursorStyleHandler,
     actionHandler: scalingEqually,
   }),
@@ -68,6 +90,9 @@ export const createObjectDefaultControls = () => ({
   br: new Control({
     x: 0.5,
     y: 0.5,
+    sizeX: 8,
+    sizeY: 8,
+    controlType: 'square',
     cursorStyleHandler: scaleCursorStyleHandler,
     actionHandler: scalingEqually,
   }),
@@ -75,10 +100,12 @@ export const createObjectDefaultControls = () => ({
   mtr: new Control({
     x: 0,
     y: -0.5,
+    sizeX: 24,
+    sizeY: 24,
+    controlType: 'circle',
     actionHandler: rotationWithSnapping,
     cursorStyleHandler: rotationStyleHandler,
     offsetY: -40,
-    withConnection: true,
     actionName: ROTATE,
   }),
 });
@@ -87,6 +114,9 @@ export const createResizeControls = () => ({
   mr: new Control({
     x: 0.5,
     y: 0,
+    sizeX: 6,
+    sizeY: 18,
+    controlType: 'diamond',
     actionHandler: changeWidth,
     cursorStyleHandler: scaleSkewCursorStyleHandler,
     actionName: RESIZING,
@@ -94,6 +124,9 @@ export const createResizeControls = () => ({
   ml: new Control({
     x: -0.5,
     y: 0,
+    sizeX: 6,
+    sizeY: 18,
+    controlType: 'diamond',
     actionHandler: changeWidth,
     cursorStyleHandler: scaleSkewCursorStyleHandler,
     actionName: RESIZING,
@@ -103,4 +136,17 @@ export const createResizeControls = () => ({
 export const createTextboxDefaultControls = () => ({
   ...createObjectDefaultControls(),
   ...createResizeControls(),
+});
+
+export const createFrameDefaultControls = ({ sizeX }: { sizeX: number }) => ({
+  head: new Control({
+    x: 0,
+    y: -0.5,
+    offsetY: -32,
+    sizeX: sizeX,
+    sizeY: 32,
+    cursorStyleHandler: () => 'move',
+    actionHandler: dragHandler,
+    actionName: MOVING,
+  }),
 });

@@ -586,15 +586,13 @@ export class IText<
       lineIndex = cursorLocation.lineIndex,
       charIndex =
         cursorLocation.charIndex > 0 ? cursorLocation.charIndex - 1 : 0,
-      charHeight = this.getValueOfPropertyAt(lineIndex, charIndex, 'fontSize'),
+      charHeight =
+        this.getValueOfPropertyAt(lineIndex, charIndex, 'fontSize') *
+        this.lineHeight,
       multiplier = this.getObjectScaling().x * this.canvas!.getZoom(),
       cursorWidth = this.cursorWidth / multiplier,
       dy = this.getValueOfPropertyAt(lineIndex, charIndex, 'deltaY'),
-      topOffset =
-        boundaries.topOffset +
-        ((1 - this._fontSizeFraction) * this.getHeightOfLine(lineIndex)) /
-          this.lineHeight -
-        charHeight * (1 - this._fontSizeFraction);
+      topOffset = boundaries.topOffset;
 
     return {
       color:
@@ -708,9 +706,7 @@ export class IText<
         }
       }
       realLineHeight = lineHeight;
-      if (this.lineHeight < 1 || (i === endLine && this.lineHeight > 1)) {
-        lineHeight /= this.lineHeight;
-      }
+
       let drawStart = boundaries.left + lineOffset + boxStart,
         drawHeight = lineHeight,
         extraTop = 0;

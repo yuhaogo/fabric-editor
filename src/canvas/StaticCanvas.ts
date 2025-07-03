@@ -98,6 +98,8 @@ export class StaticCanvas<
     end: number;
   }[];
 
+  declare frameTitles: FabricObject[];
+
   // background
   declare backgroundVpt: boolean;
   declare backgroundColor: TFiller | string;
@@ -205,6 +207,7 @@ export class StaticCanvas<
     });
     this.skipControlsDrawing = false;
     this.viewportTransform = [...this.viewportTransform];
+    this.frameTitles = [];
     this.calcViewportBoundaries();
   }
 
@@ -519,6 +522,20 @@ export class StaticCanvas<
     // Static canvas has no controls
   }
 
+  drawBorder(_ctx: CanvasRenderingContext2D) {
+    // Static canvas has no border
+  }
+
+  addFrameTitle(title: FabricObject) {
+    this.frameTitles.push(title);
+  }
+
+  _renderFrameTitle(ctx: CanvasRenderingContext2D) {
+    this.frameTitles.forEach((titleObject) => {
+      titleObject.render(ctx);
+    });
+  }
+
   /**
    * Renders background, objects, overlay and controls.
    * @param {CanvasRenderingContext2D} ctx
@@ -544,6 +561,10 @@ export class StaticCanvas<
     ctx.transform(v[0], v[1], v[2], v[3], v[4], v[5]);
     this._renderObjects(ctx, objects);
     ctx.restore();
+
+    // 绘制边框
+    this.drawBorder(ctx);
+
     if (!this.controlsAboveOverlay && !this.skipControlsDrawing) {
       this.drawControls(ctx);
     }
@@ -560,6 +581,10 @@ export class StaticCanvas<
     if (this.controlsAboveOverlay && !this.skipControlsDrawing) {
       this.drawControls(ctx);
     }
+
+    // 绘制 frame 标题
+    this._renderFrameTitle(ctx);
+
     this.fire('after:render', { ctx });
 
     if (this.__cleanupTask) {
@@ -623,6 +648,7 @@ export class StaticCanvas<
     ctx.beginPath();
     ctx.rect(object.left, object.top, object.width, object.height);
     ctx.clip();
+    ctx.closePath();
   }
 
   /**

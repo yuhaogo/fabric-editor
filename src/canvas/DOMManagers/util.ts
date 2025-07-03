@@ -80,6 +80,14 @@ export function makeElementUnselectable(element: HTMLElement) {
   if (typeof element.onselectstart !== 'undefined') {
     element.onselectstart = () => false;
   }
+  element?.addEventListener(
+    'wheel',
+    (e) => {
+      e.preventDefault();
+    },
+    { passive: false },
+  );
+
   element.style.userSelect = NONE;
   return element;
 }

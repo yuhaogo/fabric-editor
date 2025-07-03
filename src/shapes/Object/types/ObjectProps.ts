@@ -16,8 +16,10 @@ export interface ObjectProps
   clipPath?: FabricObject;
   fill: TFiller | string | null;
   stroke: TFiller | string | null;
-  shadow: Shadow | null;
+  shadow: Partial<Shadow> | null;
   canvas?: StaticCanvas | Canvas;
+
+  id: string;
 
   /**
    * Minimum allowed scale value of an object

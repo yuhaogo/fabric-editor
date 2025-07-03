@@ -213,6 +213,19 @@ export class ObjectGeometry<EventSpec extends ObjectEvents = ObjectEvents>
   }
 
   /**
+   * @return {Point[]} [tl, tr, br, bl] in the scene plane
+   */
+  getControlCoords(): Point[] {
+    const { tl, tr, br, bl } = this.calcControlCoords();
+    const coords = [
+      new Point({ x: tl.x, y: tl.y - 40 }),
+      new Point({ x: tr.x, y: tl.y - 40 }),
+      new Point({ x: br.x, y: tl.y }),
+      new Point({ x: bl.x, y: tl.y }),
+    ];
+    return coords;
+  }
+  /**
    * Checks if object intersects with the scene rect formed by {@link tl} and {@link br}
    */
   intersectsWithRect(tl: Point, br: Point): boolean {
@@ -438,6 +451,23 @@ export class ObjectGeometry<EventSpec extends ObjectEvents = ObjectEvents>
       tr: transformPoint({ x: w, y: -h }, finalMatrix),
       bl: transformPoint({ x: -w, y: h }, finalMatrix),
       br: transformPoint({ x: w, y: h }, finalMatrix),
+    };
+  }
+
+  calcControlCoords(): TCornerPoint {
+    const vpt = this.getViewportTransform();
+    const { x, y } = this.getRelativeCenterPoint();
+    const tMatrix = createTranslateMatrix(x, y);
+    const matrix = multiplyTransformMatrices(vpt, tMatrix);
+    const size = this._getTransformedDimensions(),
+      w = size.x / 2,
+      h = size.y / 2;
+    return {
+      // corners
+      tl: transformPoint({ x: -w, y: -h }, matrix),
+      tr: transformPoint({ x: w, y: -h }, matrix),
+      br: transformPoint({ x: w, y: h }, matrix),
+      bl: transformPoint({ x: -w, y: h }, matrix),
     };
   }
 

@@ -1403,6 +1403,10 @@ function createCollectionMixin(Base) {
       // we iterate reverse order to collect top first in case of click.
       for (let i = this._objects.length - 1; i >= 0; i--) {
         const object = this._objects[i];
+        // 框选时过滤 frame
+        if (object.layerType === 'frame') {
+          continue;
+        }
         if (object.selectable && object.visible && (includeIntersecting && object.intersectsWithRect(tl, br) || object.isContainedWithinRect(tl, br) || includeIntersecting && object.containsPoint(tl) || includeIntersecting && object.containsPoint(br))) {
           objects.push(object);
         }
@@ -2111,6 +2115,11 @@ function makeElementUnselectable(element) {
   if (typeof element.onselectstart !== 'undefined') {
     element.onselectstart = () => false;
   }
+  element === null || element === void 0 || element.addEventListener('wheel', e => {
+    e.preventDefault();
+  }, {
+    passive: false
+  });
   element.style.userSelect = NONE;
   return element;
 }
@@ -2289,6 +2298,7 @@ class StaticCanvas extends createCollectionMixin(CommonMethods) {
     });
     this.skipControlsDrawing = false;
     this.viewportTransform = [...this.viewportTransform];
+    this.frameTitles = [];
     this.calcViewportBoundaries();
   }
   initElements(el) {
@@ -2590,6 +2600,17 @@ class StaticCanvas extends createCollectionMixin(CommonMethods) {
   drawControls(_ctx) {
     // Static canvas has no controls
   }
+  drawBorder(_ctx) {
+    // Static canvas has no border
+  }
+  addFrameTitle(title) {
+    this.frameTitles.push(title);
+  }
+  _renderFrameTitle(ctx) {
+    this.frameTitles.forEach(titleObject => {
+      titleObject.render(ctx);
+    });
+  }
 
   /**
    * Renders background, objects, overlay and controls.
@@ -2616,6 +2637,9 @@ class StaticCanvas extends createCollectionMixin(CommonMethods) {
     ctx.transform(v[0], v[1], v[2], v[3], v[4], v[5]);
     this._renderObjects(ctx, objects);
     ctx.restore();
+
+    // 绘制边框
+    this.drawBorder(ctx);
     if (!this.controlsAboveOverlay && !this.skipControlsDrawing) {
       this.drawControls(ctx);
     }
@@ -2634,6 +2658,9 @@ class StaticCanvas extends createCollectionMixin(CommonMethods) {
     if (this.controlsAboveOverlay && !this.skipControlsDrawing) {
       this.drawControls(ctx);
     }
+
+    // 绘制 frame 标题
+    this._renderFrameTitle(ctx);
     this.fire('after:render', {
       ctx
     });
@@ -2691,6 +2718,7 @@ class StaticCanvas extends createCollectionMixin(CommonMethods) {
     ctx.beginPath();
     ctx.rect(object.left, object.top, object.width, object.height);
     ctx.clip();
+    ctx.closePath();
   }
 
   /**
@@ -3726,11 +3754,15 @@ function invertOrigin(origin) {
   return -resolveOrigin(origin) + 0.5;
 }
 const isLocked = (target, lockingKey) => target[lockingKey];
-const commonEventInfo = (eventData, transform, x, y) => {
+const commonEventInfo = (eventData, transform, x, y, moveX, moveY) => {
   return {
     e: eventData,
     transform,
-    pointer: new Point(x, y)
+    pointer: new Point(x, y),
+    movement: {
+      x: moveX,
+      y: moveY
+    }
   };
 };
 
@@ -3811,12 +3843,14 @@ const dragHandler = (eventData, transform, x, y) => {
     } = transform,
     newLeft = x - offsetX,
     newTop = y - offsetY,
+    moveXLen = newLeft - target.left,
+    moveYLen = newTop - target.top,
     moveX = !isLocked(target, 'lockMovementX') && target.left !== newLeft,
     moveY = !isLocked(target, 'lockMovementY') && target.top !== newTop;
   moveX && target.set(LEFT, newLeft);
   moveY && target.set(TOP, newTop);
   if (moveX || moveY) {
-    fireEvent(MOVING, commonEventInfo(eventData, transform, x, y));
+    fireEvent(MOVING, commonEventInfo(eventData, transform, x, y, moveXLen, moveYLen));
   }
   return moveX || moveY;
 };
@@ -4812,14 +4846,14 @@ const textDefaultValues = {
     // fontSize factor
     baseline: 0.11 // baseline-shift factor (downwards)
   },
-  _fontSizeFraction: 0.222,
+  _fontSizeFraction: 1,
   offsets: {
     underline: 0.1,
     linethrough: -0.28167,
     // added 1/30 to original number
     overline: -0.81333 // added 1/15 to original number
   },
-  _fontSizeMult: 1.13,
+  _fontSizeMult: 1,
   [TEXT_DECORATION_THICKNESS]: 66.667 // before implementation was 1/15
 };
 const JUSTIFY = 'justify';
@@ -5188,7 +5222,7 @@ const interactiveObjectDefaultValues = {
   cornerStyle: 'rect',
   cornerDashArray: null,
   hasControls: true,
-  borderColor: 'rgb(178,204,255)',
+  borderColor: 'rgb(0, 0, 0)',
   borderDashArray: null,
   borderOpacityWhenMoving: 0.4,
   borderScaleFactor: 1,
@@ -6211,6 +6245,31 @@ class ObjectGeometry extends CommonMethods {
   }
 
   /**
+   * @return {Point[]} [tl, tr, br, bl] in the scene plane
+   */
+  getControlCoords() {
+    const {
+      tl,
+      tr,
+      br,
+      bl
+    } = this.calcControlCoords();
+    const coords = [new Point({
+      x: tl.x,
+      y: tl.y - 40
+    }), new Point({
+      x: tr.x,
+      y: tl.y - 40
+    }), new Point({
+      x: br.x,
+      y: tl.y
+    }), new Point({
+      x: bl.x,
+      y: tl.y
+    })];
+    return coords;
+  }
+  /**
    * Checks if object intersects with the scene rect formed by {@link tl} and {@link br}
    */
   intersectsWithRect(tl, br) {
@@ -6426,6 +6485,37 @@ class ObjectGeometry extends CommonMethods {
         x: w,
         y: h
       }, finalMatrix)
+    };
+  }
+  calcControlCoords() {
+    const vpt = this.getViewportTransform();
+    const {
+      x,
+      y
+    } = this.getRelativeCenterPoint();
+    const tMatrix = createTranslateMatrix(x, y);
+    const matrix = multiplyTransformMatrices(vpt, tMatrix);
+    const size = this._getTransformedDimensions(),
+      w = size.x / 2,
+      h = size.y / 2;
+    return {
+      // corners
+      tl: transformPoint({
+        x: -w,
+        y: -h
+      }, matrix),
+      tr: transformPoint({
+        x: w,
+        y: -h
+      }, matrix),
+      br: transformPoint({
+        x: w,
+        y: h
+      }, matrix),
+      bl: transformPoint({
+        x: -w,
+        y: h
+      }, matrix)
     };
   }
 
@@ -8288,6 +8378,27 @@ const changeObjectWidth = (eventData, transform, x, y) => {
 };
 const changeWidth = wrapWithFireEvent(RESIZING, wrapWithFixedAnchor(changeObjectWidth));
 
+const rotateControlCanvas = getRotateControlCanvas();
+
+// 绘制旋转控制器
+function getRotateControlCanvas() {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  const img = new Image();
+  canvas.width = 24;
+  canvas.height = 24;
+  if (!ctx) {
+    throw new Error('Canvas 2d context not found');
+  }
+  img.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAABYlAAAWJQFJUiTwAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAGCSURBVHgB7ZbtcYMwDIbf5jpANqhGYARvUEZgg2SDZoOwASO0nYB2AtoJkg1CJ0itw7TCZ5sPm1/Jc/ceX7IsLCED3DoPmM9Wi4z4/KzVan1hZQqtWuuidXXopFVpZUhMbpxfZ2hyEI8jz49ae+veh9Y3/pe8T8mzOTItEsDLKd+qNJOFUEiUgiOGuVVYxg5d3Rzm+CisyQnLsQuWr3llgyspCy5mORX8RZr7BhXCqEIcJdyfKqeEfINqYUyIo3YEsB8b1BvWiKdPZSP8voUGZMLwgHjI+CERzCk0QIkACqTlVfgesBHnhPX48T2QAZyxHk/m2E4NgOvhBV0BpWit5JjDSd+5ZAeL7QdZyNfGMuw/E9kqPxHHTpy/+4y4QfjaJmE5hGEX9FJ6Jm8Qh2xCRchwC/cvV0z+K0x8exfKBDT2A+KCMNwHYrf0P6eVCYo8Ngrdp3tJPTlj1wjntjZB2WmTGxohETmm/xFzMKPb7hIIXQp4Y2msCfmaV0nhzp2Z/AIIOrR87s3CiAAAAABJRU5ErkJggg==';
+  img.onload = () => {
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, 4, 5, 16, 16);
+  };
+  return canvas;
+}
+
 /**
  * Render a round control, as per fabric features.
  * This function is written to respect object properties like transparentCorners, cornerSize
@@ -8368,6 +8479,87 @@ function renderSquareControl(ctx, left, top, styleOverride, fabricObject) {
     ctx.strokeRect(-xSizeBy2, -ySizeBy2, xSize, ySize);
   }
   ctx.restore();
+}
+/**
+ * 绘制新的控制器，顶点控制器为方形，中点控制器为药丸，旋转控制点为圆形
+ * @param this
+ * @param ctx
+ * @param left
+ * @param top
+ * @param styleOverride
+ * @param fabricObject
+ */
+function renderSquare2Control(ctx, left, top, fabricObject) {
+  const controlType = this.controlType;
+  ctx.save();
+  ctx.translate(left, top);
+  //  angle is relative to canvas plane
+  const angle = fabricObject.getTotalAngle();
+  switch (controlType) {
+    case 'square':
+      renderSquare(ctx, this.sizeX, this.sizeY, angle);
+      break;
+    case 'circle':
+      renderCircle(ctx, this.sizeX, this.sizeY, this.hover);
+      break;
+    case 'diamond':
+      renderDiamond(ctx, this.sizeX, this.sizeY, angle);
+      break;
+  }
+  ctx.restore();
+}
+
+// 绘制方块控制器
+function renderSquare(ctx, sizeX, sizeY, angle) {
+  const xSize = sizeX,
+    ySize = sizeY,
+    strokeWidth = 1,
+    xSizeBy2 = xSize / 2,
+    ySizeBy2 = ySize / 2;
+  ctx.rotate(degreesToRadians(angle));
+  ctx.fillStyle = '#D8FF00';
+  ctx.strokeStyle = '#060A26';
+  ctx.lineWidth = strokeWidth;
+  ctx.fillRect(-xSizeBy2, -ySizeBy2, xSize, ySize);
+  ctx.strokeRect(-xSizeBy2 - 0.5, -ySizeBy2 - 0.5, xSize, ySize);
+}
+
+// 绘制圆形控制器
+function renderCircle(ctx, sizeX, sizeY, hover) {
+  const xSize = sizeX,
+    ySize = sizeY,
+    xSizeBy2 = xSize / 2,
+    ySizeBy2 = ySize / 2;
+  let fillStyle = '#ffffff';
+  if (hover) {
+    fillStyle = '#D8FF00';
+  }
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.1)';
+  ctx.shadowBlur = 3;
+  ctx.shadowOffsetY = 0;
+  ctx.shadowOffsetX = 0;
+  ctx.fillStyle = fillStyle;
+  ctx.arc(0, 0, 12, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.drawImage(rotateControlCanvas, -xSizeBy2, -ySizeBy2, xSize, ySize);
+}
+
+// 绘制药丸控制器
+function renderDiamond(ctx, sizeX, sizeY, angle) {
+  const xSize = sizeX,
+    ySize = sizeY,
+    strokeWidth = 1,
+    xSizeBy2 = (xSize + strokeWidth) / 2,
+    ySizeBy2 = (ySize + strokeWidth) / 2;
+  ctx.rotate(degreesToRadians(angle));
+  ctx.fillStyle = '#D8FF00';
+  ctx.lineWidth = strokeWidth;
+  ctx.strokeStyle = '#060A26';
+  ctx.beginPath();
+  ctx.fillRect(-xSizeBy2, -ySizeBy2, xSize, ySize);
+  ctx.roundRect(-xSizeBy2, -ySizeBy2, xSize, ySize, sizeX < sizeY ? sizeX / 2 : sizeY / 2);
+  ctx.stroke();
+  ctx.beginPath();
 }
 
 class Control {
@@ -8479,6 +8671,14 @@ class Control {
      * @default false
      */
     _defineProperty(this, "withConnection", false);
+    /**
+     * 控制器类型
+     */
+    _defineProperty(this, "controlType", void 0);
+    /**
+     * 控制器是否被hover
+     */
+    _defineProperty(this, "hover", false);
     Object.assign(this, options);
   }
 
@@ -8569,6 +8769,13 @@ class Control {
   }
 
   /**
+   * Set hover status for control
+   */
+  setHover(hover) {
+    this.hover = hover;
+  }
+
+  /**
    * Returns the action name. The basic implementation just return the actionName property.
    * @param {Event} eventData the native mouse event
    * @param {Control} control the current control ( likely this)
@@ -8642,10 +8849,17 @@ class Control {
         renderCircleControl.call(this, ctx, left, top, styleOverride, fabricObject);
         break;
       default:
-        renderSquareControl.call(this, ctx, left, top, styleOverride, fabricObject);
+        renderSquare2Control.call(this, ctx, left, top, fabricObject);
     }
   }
 }
+
+// 获取旋转的鼠标样式
+const getRotateCursor = rotate => {
+  rotate = (rotate + 180) % 360;
+  const svgStr = `<svg width='20' height='18' viewBox='0 0 20 18' fill='none' xmlns='http://www.w3.org/2000/svg' transform='rotate(${rotate})'><g filter='url(#filter0_d_1_29)'><path fill-rule='evenodd' clip-rule='evenodd' d='M2.5 9H7.11538L5.21967 11.2004C6.55813 12.3429 8.21114 13.0179 9.99997 13.0179C11.7888 13.0179 13.4418 12.3429 14.7803 11.2004L15.6044 12.157C14.0505 13.5371 12.1078 14.3571 9.99997 14.3571C7.89219 14.3571 5.94941 13.5371 4.3955 12.157L2.5 14.3571V9ZM12.8846 9H17.5V14.3571L12.8846 9Z' fill='black'/><path d='M7.30479 9.16318L7.66076 8.75H7.11538H2.5H2.25V9V14.3571V15.0303L2.6894 14.5203L4.4214 12.51C5.98353 13.8264 7.91126 14.6071 9.99997 14.6071C12.0887 14.6071 14.0164 13.8264 15.5786 12.5099L17.3106 14.5203L17.75 15.0303V14.3571V9V8.75H17.5H12.8846H12.3392L12.6952 9.16318L14.4244 11.1703C13.1629 12.1803 11.6389 12.7679 9.99997 12.7679C8.36107 12.7679 6.83702 12.1803 5.57557 11.1703L7.30479 9.16318Z' stroke='white' stroke-width='0.5'/></g><defs><filter id='filter0_d_1_29' x='0' y='6.5' width='20' height='11.2035' filterUnits='userSpaceOnUse' color-interpolation-filters='sRGB'><feFlood flood-opacity='0' result='BackgroundImageFix'/><feColorMatrix in='SourceAlpha' type='matrix' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0' result='hardAlpha'/><feOffset/><feGaussianBlur stdDeviation='1'/><feComposite in2='hardAlpha' operator='out'/><feColorMatrix type='matrix' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.25 0'/><feBlend mode='normal' in2='BackgroundImageFix' result='effect1_dropShadow_1_29'/><feBlend mode='normal' in='SourceGraphic' in2='effect1_dropShadow_1_29' result='shape'/></filter></defs></svg>`;
+  return `image-set(url("data:image/svg+xml;utf8,${encodeURIComponent(svgStr)}") 1x) 0 0, pointer`;
+};
 
 /**
  * Find the correct style for the control that is used for rotation.
@@ -8659,7 +8873,8 @@ const rotationStyleHandler = (eventData, control, fabricObject) => {
   if (fabricObject.lockRotation) {
     return NOT_ALLOWED_CURSOR;
   }
-  return control.cursorStyle;
+  control.setHover(true);
+  return getRotateCursor(fabricObject.angle || 0);
 };
 
 /**
@@ -9151,6 +9366,9 @@ const createObjectDefaultControls = () => ({
   ml: new Control({
     x: -0.5,
     y: 0,
+    sizeX: 6,
+    sizeY: 18,
+    controlType: 'diamond',
     cursorStyleHandler: scaleSkewCursorStyleHandler,
     actionHandler: scalingXOrSkewingY,
     getActionName: scaleOrSkewActionName
@@ -9158,6 +9376,9 @@ const createObjectDefaultControls = () => ({
   mr: new Control({
     x: 0.5,
     y: 0,
+    sizeX: 6,
+    sizeY: 18,
+    controlType: 'diamond',
     cursorStyleHandler: scaleSkewCursorStyleHandler,
     actionHandler: scalingXOrSkewingY,
     getActionName: scaleOrSkewActionName
@@ -9165,6 +9386,9 @@ const createObjectDefaultControls = () => ({
   mb: new Control({
     x: 0,
     y: 0.5,
+    sizeX: 18,
+    sizeY: 6,
+    controlType: 'diamond',
     cursorStyleHandler: scaleSkewCursorStyleHandler,
     actionHandler: scalingYOrSkewingX,
     getActionName: scaleOrSkewActionName
@@ -9172,6 +9396,9 @@ const createObjectDefaultControls = () => ({
   mt: new Control({
     x: 0,
     y: -0.5,
+    sizeX: 18,
+    sizeY: 6,
+    controlType: 'diamond',
     cursorStyleHandler: scaleSkewCursorStyleHandler,
     actionHandler: scalingYOrSkewingX,
     getActionName: scaleOrSkewActionName
@@ -9179,34 +9406,48 @@ const createObjectDefaultControls = () => ({
   tl: new Control({
     x: -0.5,
     y: -0.5,
+    sizeX: 8,
+    sizeY: 8,
+    controlType: 'square',
     cursorStyleHandler: scaleCursorStyleHandler,
     actionHandler: scalingEqually
   }),
   tr: new Control({
     x: 0.5,
     y: -0.5,
+    sizeX: 8,
+    sizeY: 8,
+    controlType: 'square',
     cursorStyleHandler: scaleCursorStyleHandler,
     actionHandler: scalingEqually
   }),
   bl: new Control({
     x: -0.5,
     y: 0.5,
+    sizeX: 8,
+    sizeY: 8,
+    controlType: 'square',
     cursorStyleHandler: scaleCursorStyleHandler,
     actionHandler: scalingEqually
   }),
   br: new Control({
     x: 0.5,
     y: 0.5,
+    sizeX: 8,
+    sizeY: 8,
+    controlType: 'square',
     cursorStyleHandler: scaleCursorStyleHandler,
     actionHandler: scalingEqually
   }),
   mtr: new Control({
     x: 0,
     y: -0.5,
+    sizeX: 24,
+    sizeY: 24,
+    controlType: 'circle',
     actionHandler: rotationWithSnapping,
     cursorStyleHandler: rotationStyleHandler,
     offsetY: -40,
-    withConnection: true,
     actionName: ROTATE
   })
 });
@@ -9214,6 +9455,9 @@ const createResizeControls = () => ({
   mr: new Control({
     x: 0.5,
     y: 0,
+    sizeX: 6,
+    sizeY: 18,
+    controlType: 'diamond',
     actionHandler: changeWidth,
     cursorStyleHandler: scaleSkewCursorStyleHandler,
     actionName: RESIZING
@@ -9221,6 +9465,9 @@ const createResizeControls = () => ({
   ml: new Control({
     x: -0.5,
     y: 0,
+    sizeX: 6,
+    sizeY: 18,
+    controlType: 'diamond',
     actionHandler: changeWidth,
     cursorStyleHandler: scaleSkewCursorStyleHandler,
     actionName: RESIZING
@@ -9230,6 +9477,23 @@ const createTextboxDefaultControls = () => ({
   ...createObjectDefaultControls(),
   ...createResizeControls()
 });
+const createFrameDefaultControls = _ref => {
+  let {
+    sizeX
+  } = _ref;
+  return {
+    head: new Control({
+      x: 0,
+      y: -0.5,
+      offsetY: -32,
+      sizeX: sizeX,
+      sizeY: 32,
+      cursorStyleHandler: () => 'move',
+      actionHandler: dragHandler,
+      actionName: MOVING
+    })
+  };
+};
 
 class InteractiveFabricObject extends FabricObject$1 {
   static getDefaults() {
@@ -9286,6 +9550,17 @@ class InteractiveFabricObject extends FabricObject$1 {
       control: this.controls[key],
       coord: this.oCoords[key]
     } : undefined;
+  }
+  resetControlStatus() {
+    const controls = this.controls;
+    if (controls) {
+      for (const key in controls) {
+        if (Object.prototype.hasOwnProperty.call(controls, key)) {
+          const control = controls[key];
+          control.setHover(false);
+        }
+      }
+    }
   }
 
   /**
@@ -9396,6 +9671,7 @@ class InteractiveFabricObject extends FabricObject$1 {
   setCoords() {
     super.setCoords();
     this.canvas && (this.oCoords = this.calcOCoords());
+    console.log('oCoords', this.oCoords);
   }
 
   /**
@@ -9441,7 +9717,17 @@ class InteractiveFabricObject extends FabricObject$1 {
    * @param {Point} size the control box size used
    */
   strokeBorders(ctx, size) {
-    ctx.strokeRect(-size.x / 2, -size.y / 2, size.x, size.y);
+    const x = Math.round(-size.x / 2) - 1;
+    const y = Math.round(-size.y / 2) - 1;
+    const width = Math.round(size.x);
+    const height = Math.round(size.y);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + width, y);
+    ctx.lineTo(x + width, y + height);
+    ctx.lineTo(x, y + height);
+    ctx.closePath();
+    ctx.stroke();
   }
 
   /**
@@ -9510,14 +9796,36 @@ class InteractiveFabricObject extends FabricObject$1 {
   }
 
   /**
-   * Draws borders of an object's bounding box.
-   * Requires public properties: width, height
-   * Requires public options: padding, borderColor
-   * @param {CanvasRenderingContext2D} ctx Context to draw on
-   * @param {object} options object representing current object parameters
-   * @param {TStyleOverride} [styleOverride] object to override the object style
+   * 渲染边框
+   * @param ctx
+   * @param styleOverride
    */
-  drawBorders(ctx, options, styleOverride) {
+  _renderBorder(ctx) {
+    let styleOverride = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {};
+    if (this.selectable) {
+      const vpt = this.getViewportTransform();
+      const matrix = multiplyTransformMatrices(vpt, this.calcTransformMatrix());
+      const options = qrDecompose(matrix);
+      ctx.save();
+      ctx.translate(options.translateX, options.translateY);
+      ctx.lineWidth = this.borderScaleFactor; // 1 * this.borderScaleFactor;
+      // since interactive groups have been introduced, an object could be inside a group and needing controls
+      // the following equality check `this.group === this.parent` covers:
+      // object without a group ( undefined === undefined )
+      // object inside a group
+      // excludes object inside a group but multi selected since group and parent will differ in value
+      if (this.group === this.parent) {
+        ctx.globalAlpha = this.isMoving ? this.borderOpacityWhenMoving : 1;
+      }
+      if (this.flipX) {
+        options.angle -= 180;
+      }
+      ctx.rotate(degreesToRadians(this.group ? options.angle : this.angle));
+      this.drawBaseBorders(ctx, options, styleOverride);
+      ctx.restore();
+    }
+  }
+  _getBorderSize(options, styleOverride) {
     let size;
     if (styleOverride && styleOverride.forActiveSelection || this.group) {
       const bbox = sizeAfterTransform(this.width, this.height, calcDimensionsMatrix(options)),
@@ -9527,9 +9835,39 @@ class InteractiveFabricObject extends FabricObject$1 {
         new Point(options.scaleX, options.scaleY)).scalarMultiply(this.strokeWidth) : ZERO;
       size = bbox.add(stroke).scalarAdd(this.borderScaleFactor).scalarAdd(this.padding * 2);
     } else {
-      size = this._calculateCurrentDimensions().scalarAdd(this.borderScaleFactor);
+      size = this._calculateCurrentDimensions();
     }
+    return size;
+  }
+
+  /**
+   * Draws borders of an object's bounding box.
+   * Requires public properties: width, height
+   * Requires public options: padding, borderColor
+   * @param {CanvasRenderingContext2D} ctx Context to draw on
+   * @param {object} options object representing current object parameters
+   * @param {TStyleOverride} [styleOverride] object to override the object style
+   */
+  drawBorders(ctx, options, styleOverride) {
+    const size = this._getBorderSize(options, styleOverride);
     this._drawBorders(ctx, size, styleOverride);
+  }
+
+  /**
+   * Draws borders of an object's bounding box.
+   * Requires public properties: width, height
+   * Requires public options: padding, borderColor
+   * @param {CanvasRenderingContext2D} ctx Context to draw on
+   * @param {object} options object representing current object parameters
+   * @param {TStyleOverride} [styleOverride] object to override the object style
+   */
+  drawBaseBorders(ctx, options, styleOverride) {
+    const size = this._getBorderSize(options, styleOverride);
+    ctx.save();
+    ctx.strokeStyle = this.borderColor;
+    this._setLineDash(ctx, this.borderDashArray);
+    this.strokeBorders(ctx, size);
+    ctx.restore();
   }
 
   /**
@@ -13842,6 +14180,11 @@ class SelectableCanvas extends StaticCanvas {
     }
     return this.searchPossibleTargets(_objects, pointer);
   }
+  findFrameControl(e) {
+    const pointer = this.getViewportPoint(e);
+    const _objects = this._objects.filter(o => o.layerType === 'frame');
+    return this._searchPossibleFrameControl(_objects, pointer);
+  }
   findFrame(e) {
     const pointer = this.getViewportPoint(e);
     const _objects = this._objects.filter(o => o.layerType === 'frame');
@@ -13905,6 +14248,42 @@ class SelectableCanvas extends StaticCanvas {
   }
 
   /**
+   * Checks point is inside the object selection condition. Either area with padding
+   * or over pixels if perPixelTargetFind is enabled
+   * @param {FabricObject} obj Object to test against
+   * @param {Object} [pointer] point from viewport.
+   * @return {Boolean} true if point is contained within an area of given object
+   * @private
+   */
+  _checkFrame(obj, pointer) {
+    if (obj && obj.visible && obj.evented) {
+      const coords = obj.getControlCoords();
+      return Intersection.isPointInPolygon(pointer, coords);
+    }
+    return false;
+  }
+
+  /**
+   * 搜索可能画板控制器区域
+   * @param {Array} [objects] objects array to look into
+   * @param {Object} [pointer] x,y object of point coordinates we want to check.
+   * @return {FabricObject} **top most object from given `objects`** that contains pointer
+   * @private
+   */
+  _searchPossibleFrameControl(objects, pointer) {
+    // Cache all targets where their bounding box contains point.
+    let i = objects.length;
+    // Do not check for currently grouped objects, since we check the parent group itself.
+    // until we call this function specifically to search inside the activeGroup
+    while (i--) {
+      const target = objects[i];
+      if (this._checkFrame(target, pointer)) {
+        return target;
+      }
+    }
+  }
+
+  /**
    * 搜索可能画板
    * @param {Array} [objects] objects array to look into
    * @param {Object} [pointer] x,y object of point coordinates we want to check.
@@ -13919,10 +14298,6 @@ class SelectableCanvas extends StaticCanvas {
     while (i--) {
       const target = objects[i];
       if (this._checkTarget(target, pointer)) {
-        if (isCollection(target) && target.subTargetCheck) {
-          const subTarget = this._searchPossibleTargets(target._objects, pointer);
-          subTarget && this.targets.push(subTarget);
-        }
         return target;
       }
     }
@@ -14372,6 +14747,11 @@ class SelectableCanvas extends StaticCanvas {
       activeObject._renderControls(ctx);
     }
   }
+  drawBorder(ctx) {
+    if (this._hoveredTarget) {
+      this._hoveredTarget._renderBorder(ctx);
+    }
+  }
 
   /**
    * @private
@@ -14520,6 +14900,14 @@ const syntheticEventConfig = {
     targetOut: 'dragleave',
     canvasIn: 'drag:enter',
     canvasOut: 'drag:leave'
+  },
+  trans: {
+    in: 'over',
+    out: 'out',
+    targetIn: 'transover',
+    targetOut: 'transout',
+    canvasIn: 'trans:over',
+    canvasOut: 'trans:out'
   }
 };
 class Canvas extends SelectableCanvas {
@@ -15414,7 +15802,11 @@ class Canvas extends SelectableCanvas {
     this._resetTransformEventData();
     this._viewportPoint = this.getViewportPoint(e);
     this._scenePoint = sendPointToPlane(this._viewportPoint, undefined, this.viewportTransform);
-    this._target = this._currentTransform ? this._currentTransform.target : this.findTarget(e);
+    let _target = this._currentTransform ? this._currentTransform.target : this.findTarget(e);
+    if (!_target) {
+      _target = this.findFrameControl(e);
+    }
+    this._target = _target;
   }
 
   /**
@@ -15446,12 +15838,15 @@ class Canvas extends SelectableCanvas {
       groupSelector.deltaY = pointer.y - groupSelector.y;
       this.renderTop();
     } else if (!this._currentTransform) {
-      const target = this.findTarget(e);
+      let target = this.findTarget(e);
+      if (!target) {
+        target = this.findFrameControl(e);
+      }
       this._setCursorFromEvent(e, target);
       this._fireOverOutEvents(e, target);
     } else {
       this._transformObject(e);
-      // 鼠标移入/移出画板
+      // 鼠标拖拽图层移入/移出
       const frameTarget = this.findFrame(e);
       this._fireOverOutFrameEvents(e, frameTarget);
     }
@@ -15471,9 +15866,6 @@ class Canvas extends SelectableCanvas {
       _hoveredTargets = this._hoveredTargets,
       targets = this.targets,
       length = Math.max(_hoveredTargets.length, targets.length);
-    if ((_hoveredTarget === null || _hoveredTarget === void 0 ? void 0 : _hoveredTarget.layerType) === 'frame') {
-      console.log(_hoveredTarget);
-    }
     this.fireSyntheticInOutEvents('mouse', {
       e,
       target,
@@ -15498,7 +15890,7 @@ class Canvas extends SelectableCanvas {
    */
   _fireOverOutFrameEvents(e, target) {
     const _hoveredFrameTarget = this._hoveredFrameTarget;
-    this.fireSyntheticInOutEvents('mouse', {
+    this.fireSyntheticInOutEvents('trans', {
       e,
       target,
       oldTarget: _hoveredFrameTarget
@@ -15570,6 +15962,7 @@ class Canvas extends SelectableCanvas {
       };
       fireCanvas && this.fire(canvasOut, outOpt);
       oldTarget.fire(targetOut, outOpt);
+      this.requestRenderAll();
     }
     if (target && targetChanged) {
       const inOpt = {
@@ -15581,6 +15974,7 @@ class Canvas extends SelectableCanvas {
       };
       fireCanvas && this.fire(canvasIn, inOpt);
       target.fire(targetIn, inOpt);
+      this.requestRenderAll();
     }
   }
 
@@ -15640,6 +16034,10 @@ class Canvas extends SelectableCanvas {
   _setCursorFromEvent(e, target) {
     if (!target) {
       this.setCursor(this.defaultCursor);
+      const activeObject = this._activeObject;
+      if (activeObject) {
+        activeObject.resetControlStatus();
+      }
       return;
     }
     let hoverCursor = target.hoverCursor || this.hoverCursor;
@@ -19435,14 +19833,18 @@ class FabricText extends StyledText {
     const fontCache = cache.getFontCache(charStyle),
       fontDeclaration = this._getFontDeclaration(charStyle),
       couple = previousChar + _char,
+      ascentKey = _char + 'ascent',
       stylesAreEqual = previousChar && fontDeclaration === this._getFontDeclaration(prevCharStyle),
       fontMultiplier = charStyle.fontSize / this.CACHE_FONT_SIZE;
-    let width, coupleWidth, previousWidth, kernedWidth;
+    let width, coupleWidth, previousWidth, kernedWidth, ascent;
     if (previousChar && fontCache[previousChar] !== undefined) {
       previousWidth = fontCache[previousChar];
     }
     if (fontCache[_char] !== undefined) {
       kernedWidth = width = fontCache[_char];
+    }
+    if (fontCache[ascentKey] !== undefined) {
+      ascent = fontCache[ascentKey];
     }
     if (stylesAreEqual && fontCache[couple] !== undefined) {
       coupleWidth = fontCache[couple];
@@ -19453,8 +19855,14 @@ class FabricText extends StyledText {
       // send a TRUE to specify measuring font size CACHE_FONT_SIZE
       this._setTextStyles(ctx, charStyle, true);
       if (width === undefined) {
-        kernedWidth = width = ctx.measureText(_char).width;
+        const {
+          actualBoundingBoxAscent,
+          width: measureWidth
+        } = ctx.measureText(_char);
+        kernedWidth = width = measureWidth;
+        ascent = actualBoundingBoxAscent;
         fontCache[_char] = width;
+        fontCache[ascentKey] = ascent;
       }
       if (previousWidth === undefined && stylesAreEqual && previousChar) {
         previousWidth = ctx.measureText(previousChar).width;
@@ -19470,7 +19878,8 @@ class FabricText extends StyledText {
     }
     return {
       width: width * fontMultiplier,
-      kernedWidth: kernedWidth * fontMultiplier
+      kernedWidth: kernedWidth * fontMultiplier,
+      ascent: ascent * fontMultiplier
     };
   }
 
@@ -19610,7 +20019,8 @@ class FabricText extends StyledText {
       left: 0,
       height: style.fontSize,
       kernedWidth,
-      deltaY: style.deltaY
+      deltaY: style.deltaY,
+      ascent: info.ascent
     };
     if (charIndex > 0 && !skipLeft) {
       const previousBox = this.__charBounds[lineIndex][charIndex - 1];
@@ -19646,7 +20056,7 @@ class FabricText extends StyledText {
       height = 0;
     for (let i = 0, len = this._textLines.length; i < len; i++) {
       lineHeight = this.getHeightOfLine(i);
-      height += i === len - 1 ? lineHeight / this.lineHeight : lineHeight;
+      height += lineHeight;
     }
     return height;
   }
@@ -19678,10 +20088,10 @@ class FabricText extends StyledText {
     const left = this._getLeftOffset(),
       top = this._getTopOffset();
     for (let i = 0, len = this._textLines.length; i < len; i++) {
-      const heightOfLine = this.getHeightOfLine(i),
-        maxHeight = heightOfLine / this.lineHeight,
-        leftOffset = this._getLineLeftOffset(i);
-      this._renderTextLine(method, ctx, this._textLines[i], left + leftOffset, top + lineHeights + maxHeight, i);
+      const heightOfLine = this.getHeightOfLine(i);
+        heightOfLine / this.lineHeight;
+        const leftOffset = this._getLineLeftOffset(i);
+      this._renderTextLine(method, ctx, this._textLines[i], left + leftOffset, top + lineHeights + heightOfLine, i);
       lineHeights += heightOfLine;
     }
     ctx.restore();
@@ -19749,7 +20159,7 @@ class FabricText extends StyledText {
       ctx.direction = isLtr ? 'ltr' : 'rtl';
       ctx.textAlign = isLtr ? LEFT : RIGHT;
     }
-    top -= lineHeight * this._fontSizeFraction / this.lineHeight;
+    top -= (lineHeight - this.__lineAscents[lineIndex]) / 2;
     if (shortCut) {
       // render all the line in one pass without checking
       // drawingLeft = isLtr ? left : left - this.getLineWidth(lineIndex);
@@ -22898,11 +23308,11 @@ class IText extends ITextClickBehavior {
     const cursorLocation = this.get2DCursorLocation(selectionStart),
       lineIndex = cursorLocation.lineIndex,
       charIndex = cursorLocation.charIndex > 0 ? cursorLocation.charIndex - 1 : 0,
-      charHeight = this.getValueOfPropertyAt(lineIndex, charIndex, 'fontSize'),
+      charHeight = this.getValueOfPropertyAt(lineIndex, charIndex, 'fontSize') * this.lineHeight,
       multiplier = this.getObjectScaling().x * this.canvas.getZoom(),
       cursorWidth = this.cursorWidth / multiplier,
       dy = this.getValueOfPropertyAt(lineIndex, charIndex, 'deltaY'),
-      topOffset = boundaries.topOffset + (1 - this._fontSizeFraction) * this.getHeightOfLine(lineIndex) / this.lineHeight - charHeight * (1 - this._fontSizeFraction);
+      topOffset = boundaries.topOffset;
     return {
       color: this.cursorColor || this.getValueOfPropertyAt(lineIndex, charIndex, 'fill'),
       opacity: this._currentCursorOpacity,
@@ -22993,9 +23403,6 @@ class IText extends ITextClickBehavior {
         }
       }
       realLineHeight = lineHeight;
-      if (this.lineHeight < 1 || i === endLine && this.lineHeight > 1) {
-        lineHeight /= this.lineHeight;
-      }
       let drawStart = boundaries.left + lineOffset + boxStart,
         drawHeight = lineHeight,
         extraTop = 0;
@@ -23174,8 +23581,11 @@ class Textbox extends IText {
    * make this function return an empty object and add controls to the ownDefaults object
    */
   static createControls() {
+    const controls = createTextboxDefaultControls();
+    controls.mb.visible = false;
+    controls.mt.visible = false;
     return {
-      controls: createTextboxDefaultControls()
+      controls: controls
     };
   }
 
@@ -23371,11 +23781,20 @@ class Textbox extends IText {
     // extract all thewords and the widths to optimally wrap lines.
     const data = this.getGraphemeDataForRender(lines);
     const wrapped = [];
+    const ascents = [];
     for (let i = 0; i < data.wordsData.length; i++) {
-      wrapped.push(...this._wrapLine(i, desiredWidth, data));
+      const {
+        graphemeLines,
+        graphemeAescents
+      } = this._wrapLine(i, desiredWidth, data);
+      wrapped.push(...graphemeLines);
+      ascents.push(...graphemeAescents);
     }
     this.isWrapping = false;
-    return wrapped;
+    return {
+      graphemeLines: wrapped,
+      graphemeAescents: ascents
+    };
   }
 
   /**
@@ -23393,27 +23812,61 @@ class Textbox extends IText {
       let offset = 0;
       const wordsOrGraphemes = splitByGrapheme ? this.graphemeSplit(line) : this.wordSplit(line);
       if (wordsOrGraphemes.length === 0) {
-        return [{
-          word: [],
-          width: 0
-        }];
-      }
-      return wordsOrGraphemes.map(word => {
-        // if using splitByGrapheme words are already in graphemes.
-        const graphemeArray = splitByGrapheme ? [word] : this.graphemeSplit(word);
-        const width = this._measureWord(graphemeArray, lineIndex, offset);
-        largestWordWidth = Math.max(width, largestWordWidth);
-        offset += graphemeArray.length + infix.length;
         return {
-          word: graphemeArray,
-          width
+          words: [{
+            word: [],
+            width: 0,
+            ascent: 0
+          }]
         };
-      });
+      }
+      const wordGroup = this.wordGroupSplit(line);
+      return {
+        words: wordsOrGraphemes.map((word, index) => {
+          // if using splitByGrapheme words are already in graphemes.
+          const graphemeArray = splitByGrapheme ? [word] : this.graphemeSplit(word);
+          const {
+            width,
+            ascent
+          } = this._measureWord(graphemeArray, lineIndex, offset);
+          largestWordWidth = Math.max(width, largestWordWidth);
+          offset += graphemeArray.length + infix.length;
+          return {
+            word: graphemeArray,
+            width,
+            ascent
+          };
+        }),
+        wordsGroup: wordGroup
+      };
     });
     return {
       wordsData: data,
       largestWordWidth
     };
+  }
+  _getGroupWord(i, group) {
+    for (let i = 0; i < group.length; i++) {
+      const [start, end] = group[i];
+      if (start >= i && end <= i) {
+        return i;
+      }
+    }
+    return -1;
+  }
+  wordGroupSplit(line) {
+    // 使用正则表达式匹配空格、连字符和CJK字符边界进行分割
+    const groupWord = line.split(/(\s+|[-]|[\u4e00-\u9fa5]|[\u3040-\u309F]|[\u30A0-\u30FF])/).filter(word => {
+      // 过滤空字符串和纯空格
+      return word;
+    });
+    let start = 0;
+    return groupWord.map(word => {
+      const end = start + word.length;
+      const wordIndex = [start, end - 1];
+      start = end;
+      return wordIndex;
+    });
   }
 
   /**
@@ -23431,14 +23884,21 @@ class Textbox extends IText {
   _measureWord(word, lineIndex) {
     let charOffset = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : 0;
     let width = 0,
+      ascent = 0,
       prevGrapheme;
     const skipLeft = true;
     for (let i = 0, len = word.length; i < len; i++) {
       const box = this._getGraphemeBox(word[i], lineIndex, i + charOffset, prevGrapheme, skipLeft);
       width += box.kernedWidth;
       prevGrapheme = word[i];
+      if (box.ascent && box.ascent > ascent) {
+        ascent = box.ascent;
+      }
     }
-    return width;
+    return {
+      width,
+      ascent: ascent
+    };
   }
 
   /**
@@ -23471,6 +23931,7 @@ class Textbox extends IText {
     const additionalSpace = this._getWidthOfCharSpacing(),
       splitByGrapheme = this.splitByGrapheme,
       graphemeLines = [],
+      graphemeAescents = [],
       infix = splitByGrapheme ? '' : ' ';
     let lineWidth = 0,
       line = [],
@@ -23482,32 +23943,103 @@ class Textbox extends IText {
     const maxWidth = Math.max(desiredWidth, largestWordWidth, this.dynamicMinWidth);
     // layout words
     const data = wordsData[lineIndex];
+    const wordsGroup = data.wordsGroup || [];
     offset = 0;
     let i;
-    for (i = 0; i < data.length; i++) {
-      const {
-        word,
-        width: wordWidth
-      } = data[i];
-      offset += word.length;
-      lineWidth += infixWidth + wordWidth - additionalSpace;
-      if (lineWidth > maxWidth && !lineJustStarted) {
-        graphemeLines.push(line);
-        line = [];
-        lineWidth = wordWidth;
-        lineJustStarted = true;
-      } else {
-        lineWidth += additionalSpace;
+    let maxAscent = 0;
+    if (this.wordBreak === 'break-all') {
+      for (i = 0; i < data.words.length; i++) {
+        const {
+          word,
+          width: wordWidth
+        } = data.words[i];
+        offset += word.length;
+        lineWidth += infixWidth + wordWidth - additionalSpace;
+        if (lineWidth > maxWidth && !lineJustStarted) {
+          graphemeLines.push(line);
+          line = [];
+          lineWidth = wordWidth;
+          lineJustStarted = true;
+        } else {
+          lineWidth += additionalSpace;
+        }
+        if (!lineJustStarted && !splitByGrapheme) {
+          line.push(infix);
+        }
+        line = line.concat(word);
+        const {
+          width
+        } = splitByGrapheme ? {
+          width: 0
+        } : this._measureWord([infix], lineIndex, offset);
+        infixWidth = width;
+        offset++;
+        lineJustStarted = false;
       }
-      if (!lineJustStarted && !splitByGrapheme) {
-        line.push(infix);
+    } else {
+      let restSpaceStr = false;
+      for (let i = 0; i < wordsGroup.length; i++) {
+        const [start, end] = wordsGroup[i];
+        let groupWord = [],
+          groupWidth = 0;
+        let groupJustStarted = line.length === 0;
+
+        // 如何是行开头，并且上一行还剩下空格，那么这一行也需要添加宽度为 0 的空格
+        if (groupJustStarted && restSpaceStr) {
+          groupWord = groupWord.concat(['']);
+          restSpaceStr = false;
+        }
+        for (let j = start; j <= end; j++) {
+          const {
+            word,
+            width: wordWidth,
+            ascent
+          } = data.words[j];
+          offset += word.length;
+          if (ascent > maxAscent) {
+            maxAscent = ascent;
+          }
+          const _lineWidth = lineWidth + groupWidth + wordWidth - additionalSpace;
+          if (_lineWidth > maxWidth) {
+            if (!groupJustStarted) {
+              graphemeLines.push(line);
+              graphemeAescents.push(maxAscent);
+              maxAscent = 0;
+              line = [];
+              lineWidth = 0;
+              lineJustStarted = true;
+              groupJustStarted = true;
+              if (/\s/.test(word[0])) {
+                restSpaceStr = true;
+              }
+            } else {
+              graphemeLines.push([...line, ...groupWord]);
+              graphemeAescents.push(maxAscent);
+              maxAscent = 0;
+              line = [];
+              lineWidth = 0;
+              groupWord = [];
+              groupWidth = 0;
+              lineJustStarted = true;
+            }
+          } else {
+            groupWidth += additionalSpace;
+          }
+          if (!restSpaceStr) {
+            groupWord = groupWord.concat(word);
+            groupWidth += infixWidth + wordWidth - additionalSpace;
+          }
+          offset++;
+          lineJustStarted = false;
+        }
+        lineWidth += groupWidth;
+        line.push(...groupWord);
       }
-      line = line.concat(word);
-      infixWidth = splitByGrapheme ? 0 : this._measureWord([infix], lineIndex, offset);
-      offset++;
-      lineJustStarted = false;
     }
-    i && graphemeLines.push(line);
+    if (line.length) {
+      graphemeLines.push(line);
+      graphemeAescents.push(maxAscent);
+    }
 
     // TODO: this code is probably not necessary anymore.
     // it can be moved out of this function since largestWordWidth is now
@@ -23515,7 +24047,10 @@ class Textbox extends IText {
     if (largestWordWidth + reservedSpace > this.dynamicMinWidth) {
       this.dynamicMinWidth = largestWordWidth - additionalSpace + reservedSpace;
     }
-    return graphemeLines;
+    return {
+      graphemeLines,
+      graphemeAescents
+    };
   }
 
   /**
@@ -23559,13 +24094,17 @@ class Textbox extends IText {
    */
   _splitTextIntoLines(text) {
     const newText = super._splitTextIntoLines(text),
-      graphemeLines = this._wrapText(newText.lines, this.width),
+      {
+        graphemeLines,
+        graphemeAescents
+      } = this._wrapText(newText.lines, this.width),
       lines = new Array(graphemeLines.length);
     for (let i = 0; i < graphemeLines.length; i++) {
       lines[i] = graphemeLines[i].join('');
     }
     newText.lines = lines;
     newText.graphemeLines = graphemeLines;
+    this.__lineAscents = graphemeAescents;
     return newText;
   }
   getMinWidth() {
@@ -25187,51 +25726,376 @@ class RichText extends FabricObject {
 }
 classRegistry.setClass(RichText);
 
+class FrameTitle {
+  constructor(props) {
+    _defineProperty(this, "text", void 0);
+    _defineProperty(this, "left", void 0);
+    _defineProperty(this, "top", void 0);
+    _defineProperty(this, "visible", void 0);
+    _defineProperty(this, "textarea", void 0);
+    _defineProperty(this, "container", void 0);
+    _defineProperty(this, "onInput", void 0);
+    _defineProperty(this, "onChange", void 0);
+    this.text = props.text;
+    this.top = props.top;
+    this.left = props.left;
+    this.container = props.container;
+    this.visible = props.visible;
+    this.onInput = props.onInput;
+    this.onChange = props.onChange;
+    this._init();
+  }
+  _init() {
+    const textarea = document.createElement('div');
+    textarea.style.position = 'absolute';
+    textarea.style.fontSize = '12px';
+    textarea.style.padding = '0px';
+    textarea.style.top = this.top + 'px';
+    textarea.style.left = this.left + 'px';
+    textarea.style.outline = 'none';
+    textarea.style.background = 'transparent';
+    textarea.style.border = '1px solid transparent';
+    textarea.style.resize = 'none';
+    textarea.style.border = 'none';
+    textarea.style.touchAction = 'none';
+    textarea.style.userSelect = 'none';
+    textarea.style.color = 'rgba(126,126,126,1)';
+    textarea.style.width = 'max-content';
+    textarea.innerText = this.text;
+    this.textarea = textarea;
+    if (this.visible) {
+      var _this$container;
+      (_this$container = this.container) === null || _this$container === void 0 || _this$container.append(this.textarea);
+    }
+    this._registerEvent();
+  }
+  _registerEvent() {
+    this.textarea.addEventListener('input', () => {
+      this.text = this.textarea.textContent || '';
+      if (this.onInput) {
+        this.onInput(this.text);
+      }
+    });
+    this.textarea.addEventListener('dblclick', this.editing.bind(this));
+  }
+  _stopPropagation(e) {
+    e.stopPropagation();
+  }
+  setContainer(container) {
+    this.container = container;
+    if (container) {
+      this.container.append(this.textarea);
+      this.show();
+    }
+  }
+  show() {
+    this.visible = true;
+    this.textarea.style.display = 'block';
+  }
+  hide() {
+    this.visible = false;
+    this.textarea.style.display = 'none';
+  }
+  setXY(point) {
+    this.left = point.x;
+    this.top = point.y;
+    this._updatePosition();
+  }
+  _updatePosition() {
+    const textarea = this.textarea;
+    textarea.style.top = this.top + 'px';
+    textarea.style.left = this.left + 'px';
+  }
+  hover(hover) {
+    if (hover) {
+      this.textarea.style.color = 'rgba(47,110,224,1)';
+    } else {
+      this.textarea.style.color = '#000';
+    }
+  }
+
+  /**
+   * 编辑模式
+   */
+  editing() {
+    const textarea = this.textarea;
+    textarea.contentEditable = 'true';
+    textarea.style.border = '1px solid blue';
+    textarea.style.background = '#fff';
+    textarea.style.userSelect = 'auto';
+    textarea.style.color = '#000';
+    textarea.addEventListener('mousedown', this._stopPropagation);
+    textarea.addEventListener('selectstart', this._stopPropagation);
+    document.addEventListener('mousedown', this.exitEditing.bind(this));
+    if (this.onChange) {
+      this.onChange(true);
+    }
+  }
+
+  /**
+   * 退出编辑模式
+   */
+  exitEditing() {
+    const textarea = this.textarea;
+    textarea.contentEditable = 'false';
+    textarea.style.border = '1px solid transparent';
+    textarea.style.userSelect = 'none';
+    textarea.style.color = '#000';
+    textarea.style.background = 'transparent';
+    textarea.removeEventListener('mousedown', this._stopPropagation);
+    textarea.removeEventListener('selectstart', this._stopPropagation);
+    document.removeEventListener('mousedown', this.exitEditing.bind(this));
+    if (this.onChange) {
+      this.onChange(false);
+    }
+  }
+  render() {
+    this._updatePosition();
+  }
+}
+
 class Frame extends FabricObject {
   /**
-   * 子图层
+   * 子图层id集合
+   */
+
+  /**
+   *
+   * @param options
    */
 
   constructor(options) {
     super();
+    /**
+     * 标题
+     */
+    /**
+     * 标题图层
+     */
+    /**
+     * 选择框
+     */
+    /**
+     * 编辑状态
+     */
+    _defineProperty(this, "isEditing", void 0);
     this.layerType = 'frame';
-    this.selectable = false;
-    this.setOptions(options);
-    this.behavior();
+    this.setOptions({
+      ...options,
+      height: options.height,
+      top: options.top
+    });
+    this.controls = createFrameDefaultControls({
+      sizeX: this.width
+    });
+    this.frameInit();
   }
-  behavior() {
-    this.on('mouseover', this._bindMouseover);
-    this.on('mouseout', this._bindMouseout);
+  frameInit() {
+    this._renderFrameTitle();
+    this._behavior();
   }
-  _bindMouseover() {
+  _behavior() {
+    this.on('transover', this._bindMouseover);
+    this.on('transout', this._bindMouseout);
+    this.on('selected', this._bindFrameSelected);
+    this.on('moving', this._bindFrameMoving);
+    this.on('mousedblclick', this._bindDblClick);
+    this.on('deselected', this._bindFrameDeselected);
+  }
+
+  // 置顶当前画板与关联的子图层
+  topFrame() {
     var _this$canvas;
-    const object = (_this$canvas = this.canvas) === null || _this$canvas === void 0 ? void 0 : _this$canvas.getActiveObject();
-    if (object) {
-      const {
-        id
-      } = object;
-      // 加入
-      this.children.push(id);
-      // 绑定 frameId
-      object.set('frameId', this.id);
+    const _objects = this.objects || this.getObjects();
+    (_this$canvas = this.canvas) === null || _this$canvas === void 0 || _this$canvas.bringObjectToFront(this);
+    _objects.forEach(object => {
+      var _this$canvas2;
+      (_this$canvas2 = this.canvas) === null || _this$canvas2 === void 0 || _this$canvas2.bringObjectToFront(object);
+    });
+  }
+
+  // 获取子图层
+  getObjects() {
+    var _this$canvas3;
+    const allObjects = (_this$canvas3 = this.canvas) === null || _this$canvas3 === void 0 ? void 0 : _this$canvas3.getObjects();
+    return this.objects = this.children.map(id => {
+      const object = allObjects === null || allObjects === void 0 ? void 0 : allObjects.find(o => o.id === id);
+      return object;
+    }).filter(o => !!o);
+  }
+  setXY(point) {
+    const offsetX = point.x - this.left;
+    const offsetY = point.y - this.top;
+    this.left = point.x;
+    this.top = point.y;
+    this.moveFrame({
+      movement: {
+        x: offsetX,
+        y: offsetY
+      }
+    });
+    this.setCoords();
+  }
+
+  // 移动画板，同时移动关联的子图层
+  moveFrame(e) {
+    var _e$movement, _e$movement2, _this$canvas4;
+    const moveX = ((_e$movement = e.movement) === null || _e$movement === void 0 ? void 0 : _e$movement.x) || 0;
+    const moveY = ((_e$movement2 = e.movement) === null || _e$movement2 === void 0 ? void 0 : _e$movement2.y) || 0;
+    const _objects = this.objects || this.getObjects();
+    _objects.forEach(object => {
+      object.setX(object.left + moveX);
+      object.setY(object.top + moveY);
+      object.setCoords(); // 重新计算控制点坐标
+    });
+    this._moveFrameTitle();
+    (_this$canvas4 = this.canvas) === null || _this$canvas4 === void 0 || _this$canvas4.requestRenderAll();
+  }
+  exitEditing() {
+    if (this.titleText) {
+      this.titleText.exitEditing();
     }
   }
-  _bindMouseout() {
-    var _this$canvas2;
-    console.trace();
-    const object = (_this$canvas2 = this.canvas) === null || _this$canvas2 === void 0 ? void 0 : _this$canvas2.getActiveObject();
-    if (object) {
-      const {
-        id
-      } = object;
-      // 移除
-      this.children = this.children.filter(c => c !== id);
-      // 去除 frameId
-      object.set('frameId', '');
+  onDeselect(options) {
+    this.isEditing && this.exitEditing();
+    return super.onDeselect(options);
+  }
+  isOnScreen() {
+    const isScreen = super.isOnScreen();
+    if (!isScreen) {
+      this.titleText.hide();
+    } else {
+      this.titleText.show();
     }
+    return isScreen;
+  }
+  _moveFrameTitle() {
+    const pointer = this._calcFrameTitlePosition();
+    this.titleText.setXY(new Point({
+      x: pointer.x,
+      y: pointer.y
+    }));
+  }
+  _bindDblClick() {
+    if (this.titleText) {
+      this.titleText.editing();
+    }
+  }
+  _calcFrameTitlePosition() {
+    const vpt = this.getViewportTransform();
+    const pointer = transformPoint({
+      x: this.left,
+      y: this.top
+    }, vpt);
+    return {
+      x: pointer.x,
+      y: pointer.y - 22
+    };
+  }
+  _bindFrameMoving(e) {
+    this.moveFrame(e);
+  }
+
+  // 选中了当前画板
+  _bindFrameSelected() {
+    this.topFrame();
+    this.titleText.hover(true);
+  }
+
+  // 取消选中当前画板
+  _bindFrameDeselected() {
+    this.titleText.hover(false);
+  }
+
+  // 鼠标拖拽图层进入当前画板
+  _bindMouseover() {
+    var _this$canvas5;
+    const objects = (_this$canvas5 = this.canvas) === null || _this$canvas5 === void 0 ? void 0 : _this$canvas5.getActiveObjects();
+    const _objects = this.objects || this.getObjects();
+    if (objects !== null && objects !== void 0 && objects.length) {
+      for (let i = 0; i < objects.length; i++) {
+        const object = objects[i];
+        if (object && object.layerType !== 'frame' && !_objects.includes(object)) {
+          var _this$canvas6;
+          const {
+            id
+          } = object;
+          // 加入
+          this.children.push(id);
+          // 绑定 frameId
+          object.set('frameId', this.id);
+          (_this$canvas6 = this.canvas) === null || _this$canvas6 === void 0 || _this$canvas6.bringObjectToFront(object);
+        }
+      }
+      this.getObjects();
+    }
+  }
+
+  // 鼠标拖拽图层移出当前画板
+  _bindMouseout() {
+    var _this$canvas7;
+    const objects = (_this$canvas7 = this.canvas) === null || _this$canvas7 === void 0 ? void 0 : _this$canvas7.getActiveObjects();
+    if (objects !== null && objects !== void 0 && objects.length) {
+      for (let i = 0; i < objects.length; i++) {
+        const object = objects[i];
+        if (object && object.layerType !== 'frame') {
+          var _this$canvas8;
+          const {
+            id
+          } = object;
+          // 移除
+          this.children = this.children.filter(c => c !== id);
+          // 去除 frameId
+          object.set('frameId', '');
+          (_this$canvas8 = this.canvas) === null || _this$canvas8 === void 0 || _this$canvas8.bringObjectToFront(object);
+        }
+      }
+      this.getObjects();
+    }
+  }
+  renderCache(options) {
+    if (this.titleText) {
+      const pointer = this._calcFrameTitlePosition();
+      this.titleText.setXY(new Point({
+        x: pointer.x,
+        y: pointer.y
+      }));
+    }
+    super.renderCache(options);
   }
   _render(ctx) {
+    if (!this.titleText.container) {
+      var _this$canvas9;
+      const element = (_this$canvas9 = this.canvas) === null || _this$canvas9 === void 0 ? void 0 : _this$canvas9.wrapperEl;
+      if (element) {
+        this.titleText.setContainer(element);
+      }
+    }
+    const pointer = this._calcFrameTitlePosition();
+    this.titleText.setXY(new Point({
+      x: pointer.x,
+      y: pointer.y
+    }));
     this._renderFrame(ctx);
+  }
+  _renderFrameTitle() {
+    const pointer = this._calcFrameTitlePosition();
+    this.titleText = new FrameTitle({
+      left: pointer.x,
+      top: pointer.y,
+      visible: false,
+      text: this.title,
+      onInput: text => {
+        this.set('title', text);
+        this.fire('modified', {
+          action: 'title',
+          target: this
+        });
+      },
+      onChange: isEditing => {
+        this.isEditing = isEditing;
+      }
+    });
   }
   _renderFrame(ctx) {
     const {
@@ -25241,9 +26105,42 @@ class Frame extends FabricObject {
     const x = -w / 2;
     const y = -h / 2;
     ctx.save();
+    ctx.beginPath();
     ctx.rect(x, y, w, h);
     ctx.fillStyle = 'rgba(255, 255, 255, 1)';
     ctx.fill();
+    ctx.closePath();
+    ctx.restore();
+  }
+  _renderOutsideBorder(ctx, size) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(-size.x / 2 - 10, -size.y / 2 - 32, size.x + 20, size.y + 42, 8);
+    ctx.rect(-size.x / 2, -size.y / 2, size.x, size.y);
+    ctx.restore();
+    ctx.save();
+    ctx.fillStyle = 'rgba(188, 222, 254, 1)';
+    ctx.fill('evenodd');
+    ctx.restore();
+  }
+  _renderBorder(ctx) {
+    const vpt = this.getViewportTransform();
+    const matrix = multiplyTransformMatrices(vpt, this.calcTransformMatrix());
+    const options = qrDecompose(matrix);
+    const size = this._getBorderSize(options, {});
+    ctx.save();
+    ctx.translate(options.translateX, options.translateY);
+    this._renderOutsideBorder(ctx, size);
+    ctx.restore();
+  }
+  _renderControls(ctx) {
+    const vpt = this.getViewportTransform();
+    const matrix = multiplyTransformMatrices(vpt, this.calcTransformMatrix());
+    const options = qrDecompose(matrix);
+    const size = this._getBorderSize(options, {});
+    ctx.save();
+    ctx.translate(options.translateX, options.translateY);
+    this._renderOutsideBorder(ctx, size);
     ctx.restore();
   }
 }
@@ -26063,6 +26960,7 @@ function createPathControls(path) {
 var index = /*#__PURE__*/Object.freeze({
   __proto__: null,
   changeWidth: changeWidth,
+  createFrameDefaultControls: createFrameDefaultControls,
   createObjectDefaultControls: createObjectDefaultControls,
   createPathControls: createPathControls,
   createPolyActionHandler: createPolyActionHandler,
