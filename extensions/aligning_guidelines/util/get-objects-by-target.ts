@@ -1,22 +1,34 @@
 import type { FabricObject } from 'fabric';
-import { ActiveSelection, Group } from 'fabric';
+import { ActiveSelection, Frame, Group } from 'fabric';
 
 export function getObjectsByTarget(target: FabricObject) {
   const objects = new Set<FabricObject>();
   const canvas = target.canvas;
+  const frameId = target.frameId;
   if (!canvas) return objects;
   const children =
     target instanceof ActiveSelection ? target.getObjects() : [target];
 
-  canvas.forEachObject((o) => {
-    if (!o.isOnScreen()) return;
-    if (!o.visible) return;
-    if (o.constructor == Group) {
-      collectObjectsByGroup(objects, o);
-      return;
-    }
-    objects.add(o);
-  });
+  // 画板内移动
+  if (frameId) {
+    canvas.forEachObject((o) => {
+      if (!o.isOnScreen()) return;
+      if (!o.visible) return;
+      if (o.frameId != frameId && o.id != frameId) return;
+      if (o.constructor == Group) {
+        collectObjectsByGroup(objects, o);
+        return;
+      }
+      objects.add(o);
+    });
+  } else {
+    canvas.forEachObject((o) => {
+      if (!o.isOnScreen()) return;
+      if (!o.visible) return;
+      if (o.constructor != Frame) return;
+      objects.add(o);
+    });
+  }
 
   deleteObjectsByList(objects, children);
   return objects;
