@@ -714,13 +714,18 @@ export class SelectableCanvas<EventSpec extends CanvasEvents = CanvasEvents>
    * @param {Event} e mouse event
    * @return {FabricObject | null} the target found
    */
-  findTarget(e: TPointerEvent): FabricObject | undefined {
+  findTarget(
+    e: TPointerEvent,
+    needFrame: boolean = false,
+  ): FabricObject | undefined {
     if (this.skipTargetFind) {
       return undefined;
     }
 
     // 过滤 frame
-    const _objects = this._objects.filter((o) => o.layerType !== 'frame');
+    const _objects = this._objects.filter((o) =>
+      needFrame ? true : o.layerType !== 'frame',
+    );
 
     const pointer = this.getViewportPoint(e),
       activeObject = this._activeObject,

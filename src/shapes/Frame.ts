@@ -24,10 +24,19 @@ interface FrameProps extends FabricObjectProps, UniqueFrameProps {}
 
 interface SerializedFrameProps extends SerializedObjectProps {}
 
+interface FrameObjectEvents extends ObjectEvents {
+  'frame:remove': {
+    target: FabricObject;
+  };
+  'frame:add': {
+    target: FabricObject;
+  };
+}
+
 export class Frame<
   Props extends TOptions<FrameProps> = Partial<FrameProps>,
   SProps extends SerializedFrameProps = SerializedFrameProps,
-  EventSpec extends ObjectEvents = ObjectEvents,
+  EventSpec extends FrameObjectEvents = FrameObjectEvents,
 > extends FabricObject<Props, SProps, EventSpec> {
   /**
    * 标题
@@ -225,6 +234,9 @@ export class Frame<
           // 绑定 frameId
           object.set('frameId', this.id);
           this.canvas?.bringObjectToFront(object);
+          this.fire('frame:add', {
+            target: object,
+          });
         }
       }
       this.getObjects();
@@ -245,6 +257,9 @@ export class Frame<
           // 去除 frameId
           object.set('frameId', '');
           this.canvas?.bringObjectToFront(object);
+          this.fire('frame:remove', {
+            target: object,
+          });
         }
       }
       this.getObjects();

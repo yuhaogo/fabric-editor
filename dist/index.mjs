@@ -9671,7 +9671,6 @@ class InteractiveFabricObject extends FabricObject$1 {
   setCoords() {
     super.setCoords();
     this.canvas && (this.oCoords = this.calcOCoords());
-    console.log('oCoords', this.oCoords);
   }
 
   /**
@@ -14141,12 +14140,13 @@ class SelectableCanvas extends StaticCanvas {
    * @return {FabricObject | null} the target found
    */
   findTarget(e) {
+    let needFrame = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : false;
     if (this.skipTargetFind) {
       return undefined;
     }
 
     // 过滤 frame
-    const _objects = this._objects.filter(o => o.layerType !== 'frame');
+    const _objects = this._objects.filter(o => needFrame ? true : o.layerType !== 'frame');
     const pointer = this.getViewportPoint(e),
       activeObject = this._activeObject,
       aObjects = this.getActiveObjects();
@@ -15324,7 +15324,7 @@ class Canvas extends SelectableCanvas {
    * @param {Event} e Event object fired on mousedown
    */
   _onContextMenu(e) {
-    const target = this.findTarget(e),
+    const target = this.findTarget(e, true),
       subTargets = this.targets || [];
     const options = this._basicEventHandler('contextmenu:before', {
       e,
@@ -26025,6 +26025,9 @@ class Frame extends FabricObject {
           // 绑定 frameId
           object.set('frameId', this.id);
           (_this$canvas6 = this.canvas) === null || _this$canvas6 === void 0 || _this$canvas6.bringObjectToFront(object);
+          this.fire('frame:add', {
+            target: object
+          });
         }
       }
       this.getObjects();
@@ -26048,6 +26051,9 @@ class Frame extends FabricObject {
           // 去除 frameId
           object.set('frameId', '');
           (_this$canvas8 = this.canvas) === null || _this$canvas8 === void 0 || _this$canvas8.bringObjectToFront(object);
+          this.fire('frame:remove', {
+            target: object
+          });
         }
       }
       this.getObjects();

@@ -543,7 +543,7 @@ export class Canvas extends SelectableCanvas implements CanvasOptions {
    * @param {Event} e Event object fired on mousedown
    */
   private _onContextMenu(e: TPointerEvent): false {
-    const target = this.findTarget(e),
+    const target = this.findTarget(e, true),
       subTargets = this.targets || [];
     const options = this._basicEventHandler('contextmenu:before', {
       e,

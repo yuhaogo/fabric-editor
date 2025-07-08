@@ -356,7 +356,6 @@ export class InteractiveFabricObject<
   setCoords(): void {
     super.setCoords();
     this.canvas && (this.oCoords = this.calcOCoords());
-    console.log('oCoords', this.oCoords);
   }
 
   /**
