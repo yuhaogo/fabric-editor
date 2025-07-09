@@ -203,6 +203,11 @@ export class FabricObject<
    */
   declare frameId?: string;
 
+  /**
+   * 扩展属性
+   */
+  declare extensions: any;
+
   declare paintFirst: 'fill' | 'stroke';
   declare fill: string | TFiller | null;
   declare fillRule: CanvasFillRule;

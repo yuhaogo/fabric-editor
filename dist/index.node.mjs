@@ -416,7 +416,7 @@ class Cache {
 }
 const cache = new Cache();
 
-var version = "6.6.2";
+var version = "1.0.3";
 
 // use this syntax so babel plugin see this import here
 const VERSION = version;
@@ -2616,7 +2616,8 @@ let StaticCanvas$1 = class StaticCanvas extends createCollectionMixin(CommonMeth
    */
   requestRenderAll() {
     if (!this.nextRenderHandle && !this.disposed && !this.destroyed) {
-      this.nextRenderHandle = requestAnimFrame(() => this.renderAndReset());
+      // this.nextRenderHandle = requestAnimFrame(() => this.renderAndReset());
+      this.renderAndReset();
     }
   }
 
@@ -8342,6 +8343,9 @@ let FabricObject$1 = class FabricObject extends ObjectGeometry {
  * 画板 id
  */
 /**
+ * 扩展属性
+ */
+/**
  * This list of properties is used to check if the state of an object is changed.
  * This state change now is only used for children of groups to understand if a group
  * needs its cache regenerated during a .set call
@@ -10052,6 +10056,7 @@ class InteractiveFabricObject extends FabricObject$1 {
     const width = this.width + 4,
       height = this.height + 4;
     ctx.clearRect(-width / 2, -height / 2, width, height);
+    console.log('clear-ctx-top');
     restoreManually || ctx.restore();
     return ctx;
   }
@@ -13952,6 +13957,17 @@ class SelectableCanvas extends StaticCanvas$1 {
   }
 
   /**
+   * 渲染对象边框
+   */
+  renderTopByObjectBorder(objects) {
+    const ctx = this.contextTop;
+    for (let i = 0; i < objects.length; i++) {
+      const object = objects[i];
+      object._renderBorder(ctx);
+    }
+  }
+
+  /**
    * Set the canvas tolerance value for pixel taret find.
    * Use only integer numbers.
    * @private
@@ -14804,8 +14820,11 @@ class SelectableCanvas extends StaticCanvas$1 {
     }
   }
   drawBorder(ctx) {
-    if (this._hoveredTarget) {
-      this._hoveredTarget._renderBorder(ctx);
+    if (this._hoveredTargets) {
+      for (let i = 0; i < this._hoveredTargets.length; i++) {
+        const object = this._hoveredTargets[i];
+        object._renderBorder(ctx);
+      }
     }
   }
 
@@ -15893,6 +15912,7 @@ let Canvas$1 = class Canvas extends SelectableCanvas {
       groupSelector.deltaX = pointer.x - groupSelector.x;
       groupSelector.deltaY = pointer.y - groupSelector.y;
       this.renderTop();
+      this.hoverSelection(e);
     } else if (!this._currentTransform) {
       let target = this.findTarget(e);
       if (!target) {
@@ -16262,6 +16282,39 @@ let Canvas$1 = class Canvas extends SelectableCanvas {
     // cleanup
     this._groupSelector = null;
     return true;
+  }
+  hoverSelection(e) {
+    if (!this._groupSelector) {
+      return;
+    }
+    const {
+        x,
+        y,
+        deltaX,
+        deltaY
+      } = this._groupSelector,
+      point1 = new Point(x, y),
+      point2 = point1.add(new Point(deltaX, deltaY)),
+      tl = point1.min(point2),
+      br = point1.max(point2),
+      size = br.subtract(tl);
+    const collectedObjects = this.collectObjects({
+      left: tl.x,
+      top: tl.y,
+      width: size.x,
+      height: size.y
+    }, {
+      includeIntersecting: !this.selectionFullyContained
+    });
+    const objects =
+    // though this method runs only after mouse move the pointer could do a mouse up on the same position as mouse down
+    // should it be handled as is?
+    point1.eq(point2) ? collectedObjects[0] ? [collectedObjects[0]] : [] : collectedObjects.length > 1 ? collectedObjects.filter(object => !object.onSelect({
+      e
+    })).reverse() :
+    // `setActiveObject` will call `onSelect(collectedObjects[0])` in this case
+    collectedObjects;
+    this.renderTopByObjectBorder(objects);
   }
 
   /**

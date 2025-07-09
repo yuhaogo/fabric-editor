@@ -22,6 +22,11 @@ export interface ObjectProps
   id: string;
 
   /**
+   * 扩展属性
+   */
+  extensions?: any;
+
+  /**
    * Minimum allowed scale value of an object
    * @type Number
    * @default 0

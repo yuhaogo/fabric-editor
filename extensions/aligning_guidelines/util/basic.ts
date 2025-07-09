@@ -1,4 +1,4 @@
-import type { FabricObject, Point } from 'fabric';
+import type { FabricObject, Point } from 'fa-editor';
 
 export function getDistance(a: number, b: number) {
   return Math.abs(a - b);

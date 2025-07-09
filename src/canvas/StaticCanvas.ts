@@ -20,10 +20,7 @@ import type {
   TValidToObjectMethod,
   TOptions,
 } from '../typedefs';
-import {
-  cancelAnimFrame,
-  requestAnimFrame,
-} from '../util/animation/AnimationFrameProvider';
+import { cancelAnimFrame } from '../util/animation/AnimationFrameProvider';
 import { runningAnimations } from '../util/animation/AnimationRegistry';
 import { uid } from '../util/internals/uid';
 import { createCanvasElementFor, toBlob, toDataURL } from '../util/misc/dom';
@@ -485,7 +482,8 @@ export class StaticCanvas<
    */
   requestRenderAll() {
     if (!this.nextRenderHandle && !this.disposed && !this.destroyed) {
-      this.nextRenderHandle = requestAnimFrame(() => this.renderAndReset());
+      // this.nextRenderHandle = requestAnimFrame(() => this.renderAndReset());
+      this.renderAndReset();
     }
   }
 

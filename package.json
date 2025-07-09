@@ -1,8 +1,8 @@
 {
-  "name": "fabric-editor",
+  "name": "fa-editor",
   "description": "Object model for HTML5 canvas, and SVG-to-canvas parser. Backed by jsdom and node-canvas.",
   "homepage": "http://fabricjs.com/",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "author": "Juriy Zaytsev <kangax@gmail.com>",
   "contributors": [
     {
@@ -104,6 +104,9 @@
     "v8-to-istanbul": "^9.3.0",
     "vitest": "^3.2.1"
   },
+  "publishConfig": {
+    "registry": "http://npm.miz.com"
+  },
   "engines": {
     "node": ">=18.0.0"
   },
@@ -127,7 +130,7 @@
   "sideEffects": false,
   "exports": {
     ".": {
-      "node": null,
+      "node": "./dist/index.mjs",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.mjs",
@@ -152,7 +155,7 @@
       "types": "./dist-extensions/extensions/index.d.ts",
       "import": "./dist-extensions/index.mjs",
       "require": null,
-      "default": "./dist-extensions/fabric-extensions.min.js"
+      "default": "./dist-extensions/fabric-extensions.mjs"
     }
   },
   "optionalDependencies": {

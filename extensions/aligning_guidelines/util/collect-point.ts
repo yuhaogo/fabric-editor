@@ -1,4 +1,4 @@
-import type { FabricObject, Point, TOriginX, TOriginY } from 'fabric';
+import type { FabricObject, Point, TOriginX, TOriginY } from 'fa-editor';
 import { aligningLineConfig } from '../constant';
 import { getDistance } from './basic';
 

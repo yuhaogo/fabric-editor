@@ -724,6 +724,7 @@ export class InteractiveFabricObject<
       height = this.height + 4;
     ctx.clearRect(-width / 2, -height / 2, width, height);
 
+    console.log('clear-ctx-top');
     restoreManually || ctx.restore();
     return ctx;
   }

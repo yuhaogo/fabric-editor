@@ -4,8 +4,8 @@ import type {
   FabricObject,
   TBBox,
   TPointerEvent,
-} from 'fabric';
-import { Point, util } from 'fabric';
+} from 'fa-editor';
+import { Point, util } from 'fa-editor';
 import {
   collectHorizontalPoint,
   collectVerticalPoint,

@@ -423,6 +423,17 @@ export class SelectableCanvas<EventSpec extends CanvasEvents = CanvasEvents>
   }
 
   /**
+   * 渲染对象边框
+   */
+  renderTopByObjectBorder(objects: FabricObject[]) {
+    const ctx = this.contextTop;
+    for (let i = 0; i < objects.length; i++) {
+      const object = objects[i];
+      object._renderBorder(ctx);
+    }
+  }
+
+  /**
    * Set the canvas tolerance value for pixel taret find.
    * Use only integer numbers.
    * @private
@@ -1409,8 +1420,11 @@ export class SelectableCanvas<EventSpec extends CanvasEvents = CanvasEvents>
   }
 
   drawBorder(ctx: CanvasRenderingContext2D) {
-    if (this._hoveredTarget) {
-      this._hoveredTarget._renderBorder(ctx);
+    if (this._hoveredTargets) {
+      for (let i = 0; i < this._hoveredTargets.length; i++) {
+        const object = this._hoveredTargets[i];
+        object._renderBorder(ctx);
+      }
     }
   }
 

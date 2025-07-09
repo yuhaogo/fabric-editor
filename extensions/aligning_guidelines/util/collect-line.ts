@@ -1,5 +1,5 @@
-import type { FabricObject, TBBox } from 'fabric';
-import { Point } from 'fabric';
+import type { FabricObject, TBBox } from 'fa-editor';
+import { Point } from 'fa-editor';
 import type { HorizontalLine, VerticalLine } from '../typedefs';
 import { aligningLineConfig } from '../constant';
 import { getDistance, setPositionDir } from './basic';

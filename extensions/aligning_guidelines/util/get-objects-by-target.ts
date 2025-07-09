@@ -1,5 +1,5 @@
-import type { FabricObject } from 'fabric';
-import { ActiveSelection, Frame, Group } from 'fabric';
+import type { FabricObject } from 'fa-editor';
+import { ActiveSelection, Frame, Group } from 'fa-editor';
 
 export function getObjectsByTarget(target: FabricObject) {
   const objects = new Set<FabricObject>();

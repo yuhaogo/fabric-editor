@@ -1187,6 +1187,7 @@ export class Canvas extends SelectableCanvas implements CanvasOptions {
       groupSelector.deltaY = pointer.y - groupSelector.y;
 
       this.renderTop();
+      this.hoverSelection(e);
     } else if (!this._currentTransform) {
       let target = this.findTarget(e);
       if (!target) {
@@ -1586,6 +1587,44 @@ export class Canvas extends SelectableCanvas implements CanvasOptions {
     // cleanup
     this._groupSelector = null;
     return true;
+  }
+
+  protected hoverSelection(e: TPointerEvent) {
+    if (!this._groupSelector) {
+      return;
+    }
+    const { x, y, deltaX, deltaY } = this._groupSelector,
+      point1 = new Point(x, y),
+      point2 = point1.add(new Point(deltaX, deltaY)),
+      tl = point1.min(point2),
+      br = point1.max(point2),
+      size = br.subtract(tl);
+
+    const collectedObjects = this.collectObjects(
+      {
+        left: tl.x,
+        top: tl.y,
+        width: size.x,
+        height: size.y,
+      },
+      { includeIntersecting: !this.selectionFullyContained },
+    ) as FabricObject[];
+
+    const objects =
+      // though this method runs only after mouse move the pointer could do a mouse up on the same position as mouse down
+      // should it be handled as is?
+      point1.eq(point2)
+        ? collectedObjects[0]
+          ? [collectedObjects[0]]
+          : []
+        : collectedObjects.length > 1
+          ? collectedObjects
+              .filter((object) => !object.onSelect({ e }))
+              .reverse()
+          : // `setActiveObject` will call `onSelect(collectedObjects[0])` in this case
+            collectedObjects;
+
+    this.renderTopByObjectBorder(objects);
   }
 
   /**

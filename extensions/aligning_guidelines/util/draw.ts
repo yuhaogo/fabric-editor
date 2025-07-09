@@ -1,5 +1,5 @@
-import type { Canvas } from 'fabric';
-import { Point } from 'fabric';
+import type { Canvas } from 'fa-editor';
+import { Point } from 'fa-editor';
 import type { HorizontalLine, VerticalLine } from '../typedefs';
 import { aligningLineConfig } from '../constant';
 
